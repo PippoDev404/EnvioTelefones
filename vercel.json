@@ -5,5 +5,24 @@
       "destination": "/7-login/login.html",
       "permanent": false
     }
+  ],
+  "routes": [
+    {
+      "src": "^/$",
+      "dest": "/4-html/home.html"
+    },
+    {
+      "src": "^/login$",
+      "dest": "/7-login/login.html"
+    },
+    {
+      "src": "^/dashboard$",
+      "dest": "/4-html/dashboard.html"
+    },
+    {
+      "src": "^/adm-arquivo$",
+      "dest": "/4-html/admArquivo.html"
+    }
   ]
+
 }
