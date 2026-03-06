@@ -69,9 +69,22 @@ async function redirecionarSeJaLogado() {
 
 botaoAlternarSenha?.addEventListener("click", () => {
   if (!inputSenha) return;
+
   const mostrando = inputSenha.type === "text";
+
+  // alterna tipo do input
   inputSenha.type = mostrando ? "password" : "text";
-  botaoAlternarSenha.setAttribute("aria-label", mostrando ? "Mostrar senha" : "Ocultar senha");
+
+  // muda o ícone
+  botaoAlternarSenha.innerHTML = mostrando
+    ? '<i class="fa-regular fa-eye"></i>'
+    : '<i class="fa-regular fa-eye-slash"></i>';
+
+  // acessibilidade
+  botaoAlternarSenha.setAttribute(
+    "aria-label",
+    mostrando ? "Mostrar senha" : "Ocultar senha"
+  );
 });
 
 linkEsqueciSenha?.addEventListener("click", async (e) => {
