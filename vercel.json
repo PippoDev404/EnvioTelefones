@@ -6,23 +6,16 @@
       "permanent": false
     }
   ],
-  "routes": [
-    {
-      "src": "^/$",
-      "dest": "/4-html/home.html"
-    },
-    {
-      "src": "^/login$",
-      "dest": "/7-login/login.html"
-    },
-    {
-      "src": "^/dashboard$",
-      "dest": "/4-html/dashboard.html"
-    },
-    {
-      "src": "^/adm-arquivo$",
-      "dest": "/4-html/admArquivo.html"
-    }
+  "rewrites": [
+    { "source": "/", "destination": "/7-login/login.html" },
+    { "source": "/login", "destination": "/7-login/login.html" },
+    { "source": "/home", "destination": "/4-html/home.html" },
+    { "source": "/dashboard", "destination": "/4-html/dashboard.html" },
+    { "source": "/envio", "destination": "/4-html/envio.html" },
+    { "source": "/arquivos", "destination": "/4-html/chegadaArquivo.html" },
+    { "source": "/chegada-arquivo", "destination": "/4-html/chegadaArquivo.html" },
+    { "source": "/administrar", "destination": "/4-html/administrar.html" },
+    { "source": "/adm-arquivo", "destination": "/4-html/admArquivo.html" }
   ]
-
 }
+
