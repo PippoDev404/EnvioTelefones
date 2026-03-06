@@ -1,11 +1,4 @@
 {
-  "redirects": [
-    {
-      "source": "/",
-      "destination": "/7-login/login.html",
-      "permanent": false
-    }
-  ],
   "rewrites": [
     { "source": "/", "destination": "/7-login/login.html" },
     { "source": "/login", "destination": "/7-login/login.html" },
@@ -18,4 +11,5 @@
     { "source": "/adm-arquivo", "destination": "/4-html/admArquivo.html" }
   ]
 }
+
 
