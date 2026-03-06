@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard - IBESPE Sistema de Envio</title>
+  <script defer src="/config.js"></script>
+  <link rel="icon" type="image/png" sizes="32x32" href="/0-imgs/IconIBESPE.jpg" />
+
+  <!-- CSS (dashboard) -->
+  <link rel="stylesheet" href="/3-css/dashboard.css" />
+
+  <!-- Global + header/footer -->
+  <link rel="stylesheet" href="/1-componentes/global.css" />
+  <script defer type="module" src="/2-header-footer/header-footer.js"></script>
+
+  <!-- IndexedDB util + dashboard -->
+  <script defer src="/5-js/db.js"></script>
+  <script defer type="module" src="/5-js/dashboard.js"></script>
+</head>
+
+<body>
+  <div id="header"></div>
+
+  <main class="painelMain">
+    <section class="cabecalhoPainel">
+      <h1 class="tituloPagina">Meus Arquivos</h1>
+      <p class="subtituloPagina">Visualize e gerencie todos os seus arquivos enviados</p>
+    </section>
+
+    <section class="secaoFiltros">
+      <input type="text" id="inputBusca" class="inputBusca" placeholder="Buscar por nome do arquivo..." />
+    </section>
+
+    <section class="containerTabela">
+      <table class="tabelaArquivos">
+        <thead>
+          <tr>
+            <th class="colunaExcluir">
+              <label class="labelExcluirTodos">
+                Excluir Todos
+                <input type="checkbox" id="checkboxExcluirTodos" />
+              </label>
+            </th>
+            <th>Nome do Arquivo</th>
+            <th>Tipo</th>
+            <th>Tamanho</th>
+            <th>Data de Envio</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+
+        <tbody id="corpoTabelaArquivos"></tbody>
+      </table>
+    </section>
+
+    <div class="estadoVazio" id="estadoVazio" hidden>
+      <p>Nenhum arquivo encontrado.</p>
+    </div>
+
+    <section class="secaoAcoesTabela">
+      <div class="acoesTabelaConteudo">
+        <h2 class="notaLimpezaAutomatica">
+          Arquivos com mais de <strong>7 dias</strong> serão excluídos automaticamente.
+        </h2>
+
+        <div class="acoesExcluir">
+          <button id="botaoExcluirSelecionados" class="botaoPerigo" disabled>
+            🗑 Excluir selecionados
+          </button>
+          <span id="textoSelecionados" class="textoDica">0 selecionado(s)</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal confirmação -->
+  <div class="overlayModal" id="overlayConfirmacao" hidden>
+    <div class="modalConfirmacao" role="dialog" aria-modal="true" aria-labelledby="tituloConfirmacao">
+      <h3 id="tituloConfirmacao" class="tituloModal">Confirmar exclusão</h3>
+      <p id="mensagemConfirmacao" class="mensagemModal">Tem certeza que deseja excluir?</p>
+
+      <div class="acoesModal">
+        <button id="botaoCancelarConfirmacao" class="botaoSecundario">Cancelar</button>
+        <button id="botaoOkConfirmacao" class="botaoPerigo">Excluir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Opções -->
+  <!-- Modal Opções (mantém Colunas + adiciona Número/Data/Link) -->
+  <div class="overlayModal" id="overlayOpcoes" hidden>
+    <div class="modalConfirmacao" role="dialog" aria-modal="true" aria-labelledby="tituloOpcoes">
+      <h3 id="tituloOpcoes" class="tituloModal">Opções</h3>
+
+      <p class="mensagemModal" id="subtituloOpcoes">
+        Informe o <strong>número da pesquisa</strong> e a <strong>data</strong> (DD-MM-AAAA).
+        No lançamento, o sistema monta automaticamente:
+        <br />
+      </p>
+
+      <!-- ✅ Bloco do link (novo) -->
+      <div class="opcoesColunas" style="display:grid; gap:12px;">
+        <div style="display:grid; gap:6px;">
+          <label for="inputNumeroPesquisa" style="font-weight:600;">Número da pesquisa</label>
+          <input id="inputNumeroPesquisa" type="text" inputmode="numeric" placeholder="Ex: 744"
+            style="width:100%; padding:10px; border-radius:10px;" />
+        </div>
+
+        <div style="display:grid; gap:6px;">
+          <label for="inputDataPesquisa" style="font-weight:600;">Data (DD-MM-AAAA)</label>
+          <input id="inputDataPesquisa" type="text" placeholder="Ex: 27-02-2026"
+            style="width:100%; padding:10px; border-radius:10px;" />
+        </div>
+
+        <div class="mensagemModal" style="margin-top:6px;">
+          Prévia do link (P01):
+          <br />
+          <a id="linkPreviewPesquisa" href="#" target="_blank" rel="noopener" style="word-break:break-all;">
+            Preencha número e data para ver o link.
+          </a>
+        </div>
+      </div>
+
+      <!-- ✅ Colunas (mantido como era antes, embaixo) -->
+      <h3 id="tituloColunas" class="tituloModal">Colunas a enviar</h3>
+      <p class="mensagemModal" id="subtituloColunas">Selecione o que o pesquisador poderá ver.</p>
+
+      <div class="opcoesColunas">
+        <div class="colunaToggle" data-coluna="estado">Estado</div>
+        <div class="colunaToggle" data-coluna="cidade">Cidade</div>
+        <div class="colunaToggle" data-coluna="regiao">Região</div>
+      </div>
+
+      <div class="acoesModal">
+        <button id="botaoCancelarOpcoes" class="botaoSecundario">Cancelar</button>
+        <button id="botaoSalvarOpcoes" class="botaoPerigo">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="footer"></div>
+</body>
+
+</html>

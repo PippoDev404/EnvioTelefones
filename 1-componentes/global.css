@@ -1,0 +1,8 @@
+/* componente header */
+@import url("/2-header-footer/header/header.css");
+
+/* seu css base/global (tokens, reset, tipografia, etc) */
+@import url("/1-componentes/main.css");
+
+/* componente footer */
+@import url("/2-header-footer/footer/footer.css");

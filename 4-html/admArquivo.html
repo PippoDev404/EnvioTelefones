@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ADM Arquivo - IBESPE Sistema</title>
+  <script defer src="/config.js"></script>
+  <link rel="icon" type="image/png" sizes="32x32" href="/0-imgs/IconIBESPE.jpg" />
+  <link rel="stylesheet" href="/1-componentes/global.css" />
+  <script defer type="module" src="/2-header-footer/header-footer.js"></script>
+
+  <link rel="stylesheet" href="/3-css/admArquivo.css" />
+
+  <!-- SheetJS -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <script defer src="/5-js/db.js"></script>
+  <script defer type="module" src="/5-js/admArquivo.js"></script>
+</head>
+
+<body>
+  <div id="header"></div>
+
+  <main class="admArquivoMain">
+    <section class="cabecalhoAdmArquivo">
+      <h1 class="tituloPagina">ADM do Arquivo</h1>
+      <p class="subtituloPagina">
+        As partes são detectadas automaticamente pela coluna <strong>Nº PESQ.</strong> (P01, P02, P03...).
+        Valores como <strong>1.1</strong> entram em <strong>Sobras</strong>.
+      </p>
+    </section>
+
+    <section class="alertaBox" id="alertaBox" hidden>
+      <p class="alertaTexto" id="alertaTexto"></p>
+    </section>
+
+    <section class="cardInfo">
+      <div class="infoLinha">
+        <div class="infoItem">
+          <span class="infoLabel">Arquivo</span>
+          <span class="infoValor" id="nomeArquivo">—</span>
+        </div>
+
+        <div class="infoItem">
+          <span class="infoLabel">Data</span>
+          <span class="infoValor" id="dataArquivo">—</span>
+        </div>
+
+        <div class="infoItem">
+          <span class="infoLabel">Tamanho</span>
+          <span class="infoValor" id="tamanhoArquivo">—</span>
+        </div>
+
+        <div class="infoItem">
+          <span class="infoLabel">Status</span>
+          <span class="infoValor" id="statusArquivo">—</span>
+        </div>
+      </div>
+
+      <div class="infoLinha infoLinhaSecundaria">
+        <div class="infoItem">
+          <span class="infoLabel">Partes detectadas</span>
+          <span class="infoValor" id="totalPartes">0</span>
+        </div>
+
+        <div class="infoItem">
+          <span class="infoLabel">Sobras</span>
+          <span class="infoValor" id="totalSobras">0</span>
+        </div>
+
+        <div class="infoItem">
+          <span class="infoLabel">Usuários disponíveis</span>
+          <span class="infoValor" id="totalUsuarios">0</span>
+        </div>
+
+        <div class="infoItem">
+          <span class="infoLabel">Linhas totais</span>
+          <span class="infoValor" id="totalLinhas">—</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="cardAcoes">
+      <div class="acoesEsq">
+        <h2 class="tituloSecao">Distribuição</h2>
+        <p class="textoAjuda">
+          Selecione um usuário por parte. As <strong>Sobras</strong> ficam em outra tabela no final (sem auto-seleção).
+          A coluna <strong>Lançar</strong> é apenas placeholder (você vai implementar depois).
+        </p>
+      </div>
+
+      <div class="acoesDir">
+        <button class="botaoSecundario" id="botaoRecarregar" type="button">Recarregar</button>
+
+        <button class="botaoPerigo" id="botaoLancarPartes" type="button" disabled>
+          🚀 Lançar partes (geral)
+        </button>
+
+        <p class="textoDica" id="textoDicaLancamento">Carregando…</p>
+      </div>
+    </section>
+
+    <!-- TABELA PRINCIPAL -->
+    <section class="containerTabela">
+      <table class="tabelaPartes">
+        <thead>
+          <tr>
+            <th>Parte</th>
+            <th>Linhas</th>
+            <th>Tamanho</th>
+            <th>Visualizar</th>
+            <th>Usuário</th>
+            <th>Lançar</th>
+          </tr>
+        </thead>
+
+        <tbody id="corpoTabelaPartes"></tbody>
+      </table>
+
+      <div class="estadoVazio" id="estadoVazioPartes" hidden>
+        <p>
+          Não encontrei partes (P01, P02...). Verifique se a coluna <strong>Nº PESQ.</strong> existe.
+        </p>
+      </div>
+    </section>
+
+    <!-- TABELA SOBRAS -->
+    <section class="secaoSobras">
+      <div class="cabSobras">
+        <h2 class="tituloSecao">Sobras</h2>
+        <p class="textoAjuda">
+          Aqui ficam valores como <strong>1.1</strong>, <strong>2.3</strong>, etc. Você pode selecionar o usuário
+          manualmente (não há auto-seleção).
+        </p>
+      </div>
+
+      <section class="containerTabela">
+        <table class="tabelaPartes tabelaSobras">
+          <thead>
+            <tr>
+              <th>Sobra</th>
+              <th>Linhas</th>
+              <th>Tamanho</th>
+              <th>Visualizar</th>
+              <th>Usuário</th>
+              <th>Lançar</th>
+            </tr>
+          </thead>
+
+          <tbody id="corpoTabelaSobras"></tbody>
+        </table>
+
+        <div class="estadoVazio" id="estadoVazioSobras" hidden>
+          <p>Nenhuma sobra detectada.</p>
+        </div>
+      </section>
+    </section>
+
+    <!-- Modal de visualização da parte -->
+    <div class="overlayModal" id="overlayVisualizar" hidden>
+      <div class="modalVisualizar" role="dialog" aria-modal="true" aria-labelledby="tituloVisualizar">
+        <div class="modalTopo">
+          <h3 class="tituloModal" id="tituloVisualizar">Visualizar</h3>
+          <button class="botaoSecundario" id="botaoFecharVisualizar" type="button">Fechar</button>
+        </div>
+
+        <p class="textoAjuda" id="infoVisualizar">—</p>
+
+        <div class="containerTabelaModal">
+          <table class="tabelaModal" id="tabelaModal"></table>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div id="footer"></div>
+</body>
+
+</html>

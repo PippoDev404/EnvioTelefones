@@ -1,0 +1,416 @@
+/* =========================
+   ADM ARQUIVO — IBESPE
+   (simples, limpo, responsivo)
+========================= */
+
+.admArquivoMain{
+  flex: 1;
+  width: 100%;
+  padding: 40px 20px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* =========================
+   CABEÇALHO
+========================= */
+.cabecalhoAdmArquivo{
+  text-align: center;
+  max-width: 1100px;
+  margin: 0 auto 18px;
+}
+
+.tituloPagina{
+  margin: 0;
+  font-size: 26px;
+  font-weight: 900;
+  background: linear-gradient(120deg, var(--text) 0%, var(--text-muted) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.subtituloPagina{
+  margin: 10px 0 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.tituloSecao{
+  margin: 0;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.textoAjuda{
+  margin: 8px 0 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.textoDica{
+  margin: 10px 0 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* =========================
+   ALERTA
+========================= */
+.alertaBox{
+  max-width: 1200px;
+  margin: 0 auto 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(239, 68, 68, 0.12);
+  padding: 10px 12px;
+}
+
+.alertaTexto{
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+/* =========================
+   CARDS
+========================= */
+.cardInfo,
+.cardAcoes{
+  max-width: 1200px;
+  margin: 0 auto 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.infoLinha{
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.infoLinhaSecundaria{
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.infoItem{
+  flex: 1;
+  min-width: 190px;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  padding: 10px 12px;
+  text-align: center;
+}
+
+.infoLabel{
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 800;
+}
+
+.infoValor{
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--text);
+  word-break: break-word;
+}
+
+/* =========================
+   AÇÕES (cardAcoes)
+========================= */
+.cardAcoes{
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.acoesEsq{
+  flex: 1;
+  min-width: 280px;
+}
+
+.acoesDir{
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+/* =========================
+   BOTÕES
+========================= */
+.botaoSecundario{
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--secondary);
+  color: var(--secondary-text);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.botaoSecundario:hover{
+  background: var(--secondary-hover);
+  box-shadow: var(--shadow);
+}
+
+.botaoSecundario:active{
+  transform: scale(.98);
+}
+
+.botaoPerigo{
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(239, 68, 68, 0.55);
+  background: rgba(239, 68, 68, 0.14);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.botaoPerigo:hover{
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.75);
+  box-shadow: var(--shadow);
+}
+
+.botaoPerigo:active{
+  transform: scale(.98);
+}
+
+.botaoPerigo:disabled{
+  opacity: .5;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* =========================
+   TABELA
+========================= */
+.containerTabela{
+  max-width: 1200px;
+  margin: 0 auto;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.tabelaPartes{
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tabelaPartes thead{
+  background: rgba(255,255,255,0.06);
+}
+
+.tabelaPartes th,
+.tabelaPartes td{
+  border: 1px solid var(--border);
+  padding: 12px 10px;
+  font-size: 12px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.tabelaPartes th{
+  font-weight: 900;
+  color: var(--text);
+}
+
+.tabelaPartes tbody tr:hover{
+  background: rgba(255,255,255,0.04);
+}
+
+.selectUsuario{
+  width: 100%;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 12px;
+  text-align: center;
+  outline: none;
+}
+
+.selectUsuario:focus{
+  border-color: rgba(255,255,255,0.25);
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.08);
+}
+
+.estadoVazio{
+  padding: 22px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* =========================
+   MODAL VISUALIZAR
+========================= */
+.overlayModal[hidden]{ display:none !important; }
+
+.overlayModal{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.70);
+  display: grid;
+  place-items: center;
+  z-index: 9999;
+  padding: 14px;
+}
+
+.modalVisualizar{
+  width: min(1100px, 100%);
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 30px 90px rgba(0,0,0,0.70);
+  padding: 14px;
+}
+
+.modalTopo{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tituloModal{
+  margin: 0;
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+#infoVisualizar{
+  margin: 10px 0 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.containerTabelaModal{
+  margin-top: 12px;
+  border-radius: 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  max-height: 60vh;
+  background: rgba(255,255,255,0.02);
+}
+
+/* tabela do modal (gerada por JS) */
+.tabelaModal{
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 680px; /* evita esmagar quando tem muitas colunas */
+}
+
+.tabelaModal th,
+.tabelaModal td{
+  border: 1px solid var(--border);
+  padding: 10px 8px;
+  font-size: 12px;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.tabelaModal thead{
+  background: rgba(255,255,255,0.06);
+}
+
+.tabelaModal th{
+  font-weight: 900;
+}
+
+/* ===== Sobras ===== */
+.secaoSobras{
+  margin-top: 18px;
+}
+
+.cabSobras{
+  max-width: 1200px;
+  margin: 0 auto 10px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.tabelaSobras thead{
+  background: rgba(255,255,255,0.05);
+}
+
+/* ===== Botão lançar (placeholder) ===== */
+.botaoLancarParte{
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.08);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: 0.5s;
+}
+
+.botaoLancarParte:hover{
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.22);
+  box-shadow: var(--shadow);
+}
+
+/* deixa a coluna "Lançar" mais compacta */
+.tabelaPartes th:last-child,
+.tabelaPartes td:last-child{
+  width: 160px;
+}
+
+/* =========================
+   RESPONSIVO
+========================= */
+@media (max-width: 720px){
+  .admArquivoMain{
+    padding: 28px 14px;
+  }
+
+  .acoesDir{
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .botaoSecundario,
+  .botaoPerigo{
+    width: 100%;
+  }
+
+  .infoItem{
+    min-width: 160px;
+  }
+}

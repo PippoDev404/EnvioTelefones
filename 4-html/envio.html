@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enviar - IBESPE Sistema de Envio</title>
+  <script defer src="/config.js"></script>
+  <link rel="icon" type="image/png" sizes="32x32" href="/0-imgs/IconIBESPE.jpg">
+  <!-- link do css do envio -->
+  <link rel="stylesheet" href="/3-css/envio.css">
+  <script defer src="/5-js/db.js"></script>
+  <script defer type="module" src="/5-js/envio.js"></script>
+  <!-- link dos outros componentes -->
+  <link rel="stylesheet" href="/1-componentes/global.css">
+  <script defer type="module" src="/2-header-footer/header-footer.js"></script>
+</head>
+
+<body>
+  <div id="header"></div>
+
+  <main class="envioMain">
+    <h1>Enviar Planilha do Excel</h1>
+
+    <form id="formularioEnvio">
+      <section class="areaSoltar" data-area="dadosExcel" aria-label="Enviar Dados do Excel">
+        <p class="areaSoltarTexto">
+          <strong>Arraste</strong> ou <strong>selecione</strong> o arquivo principal
+        </p>
+
+        <menu class="acoes" aria-label="Ações Dados Excel">
+          <button class="botao" type="button" data-botao-selecionar="dadosExcel">Selecionar dados</button>
+          <input class="entradaArquivo" type="file" data-entrada="dadosExcel" accept=".xlsx,.xls,.csv" hidden />
+        </menu>
+
+        <output class="listaArquivos" data-lista="dadosExcel" hidden></output>
+      </section>
+
+      <button type="submit" class="botaoEnviarPrincipal">
+        📤 Enviar planilha
+      </button>
+    </form>
+  </main>
+  <!-- Modal de sucesso (envio) -->
+  <div class="modalOverlay" id="modalSucessoOverlay" hidden>
+    <div class="modalSucesso" role="dialog" aria-modal="true" aria-labelledby="modalSucessoTitulo">
+      <div class="modalSucessoHeader">
+        <img class="modalSucessoLogo" src="/0-imgs/logoIBESPE.webp" alt="IBESPE" />
+      </div>
+
+      <p class="modalSucessoTexto" id="modalSucessoTexto">Arquivo enviado com sucesso!</p>
+
+      <p class="modalSucessoCountdown">
+        Redirecionando para os arquivos em <strong><span id="modalSucessoSegundos">5</span>s</strong>...
+      </p>
+
+      <div class="modalSucessoAcoes">
+        <button type="button" class="botao modalBtnSecundario" id="btnFecharModalSucesso">
+          Fechar
+        </button>
+
+        <button type="button" class="botao modalBtnDashboard" id="btnIrDashboard">
+          Dashboard
+        </button>
+
+        <button type="button" class="botao modalBtnPrimario" id="btnVerArquivo">
+          Ver arquivo
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="footer"></div>
+</body>
+
+</html>

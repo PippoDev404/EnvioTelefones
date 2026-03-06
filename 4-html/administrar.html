@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>Painel Administrativo - IBESPE Sistema de Envio</title>
+  <script defer src="/config.js"></script>
+  <link rel="icon" type="image/png" sizes="32x32" href="/0-imgs/IconIBESPE.jpg" />
+
+  <!-- Painel Administrativo -->
+  <link rel="stylesheet" href="/3-css/administrar.css" />
+  <script defer src="/5-js/db.js"></script>
+  <script defer type="module" src="/5-js/administrar.js"></script>
+
+  <!-- Componentes globais -->
+  <link rel="stylesheet" href="/1-componentes/global.css">
+  <script defer type="module" src="/2-header-footer/header-footer.js"></script>
+</head>
+
+<body>
+  <div id="header"></div>
+
+  <main class="adminMain">
+    <section class="adminHeader">
+      <h1 class="tituloPagina">Painel Administrativo</h1>
+      <p class="subtituloPagina">Gerencie os usuários vinculados ao seu administrador</p>
+    </section>
+
+    <section class="adminResumo">
+      <div class="cardResumo">
+        <p class="cardTitulo">Admin</p>
+        <p class="cardValor" id="adminNome">Administrador</p>
+        <p class="cardLegenda" id="adminEmail">admin@ibespe.com.br</p>
+      </div>
+
+      <div class="cardResumo">
+        <p class="cardTitulo">Usuários vinculados</p>
+        <p class="cardValor" id="qtdUsuarios">0</p>
+        <p class="cardLegenda">Total atual</p>
+      </div>
+
+      <div class="cardResumo">
+        <p class="cardTitulo">Ativos</p>
+        <p class="cardValor" id="qtdAtivos">0</p>
+        <p class="cardLegenda">Com acesso liberado</p>
+      </div>
+    </section>
+
+    <section class="adminAcoesTopo">
+      <form class="formVincular" id="formVincular">
+        <!-- ✅ Telegram -->
+        <div class="grupoCampo">
+          <label class="labelCampo" for="inputTelegramId">Telegram ID</label>
+          <input class="inputPadrao" id="inputTelegramId" type="text" inputmode="numeric"
+            placeholder="Ex.: 123456789" required />
+          <p class="hintCampo">Obrigatório para o bot enviar arquivo no privado.</p>
+        </div>
+
+        <div class="grupoCampo">
+          <label class="labelCampo" for="inputTelegramUser">Telegram @ (opcional)</label>
+          <input class="inputPadrao" id="inputTelegramUser" type="text" placeholder="Ex.: @joaosilva" />
+          <p class="hintCampo">Só para conferência visual.</p>
+        </div>
+
+        <div class="botaoCentralizado">
+          <button class="botaoPrimario" type="submit">➕ Vincular usuário</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="secaoFiltros">
+      <input id="inputBusca" class="inputBusca" type="text" placeholder="Buscar por Telegram ID ou @" />
+
+      <select id="selectStatus" class="selectStatus">
+        <option value="">Todos os status</option>
+        <option value="ativo">Ativo</option>
+        <option value="bloqueado">Bloqueado</option>
+      </select>
+
+      <div class="acoesMassa">
+        <button id="botaoDesvincularSelecionados" class="botaoPerigo" disabled>🗑 Desvincular selecionados</button>
+        <span id="textoSelecionados" class="textoDica">0 selecionado(s)</span>
+      </div>
+    </section>
+
+    <section class="containerTabela">
+      <table class="tabelaUsuarios">
+        <thead>
+          <tr>
+            <th class="colunaCheck">
+              <label class="labelSelecionarTodos" for="checkboxSelecionarTodos">
+                Selecionar
+                <input id="checkboxSelecionarTodos" type="checkbox" />
+              </label>
+            </th>
+
+            <th>Status</th>
+            <th class="colunaParte">Parte</th>
+
+            <th class="colunaTelegramId">Telegram ID</th>
+            <th class="colunaTelegramUser">@</th>
+
+            <th>Data</th>
+            <th class="colunaAcoes">Ações</th>
+          </tr>
+        </thead>
+
+        <tbody id="corpoTabelaUsuarios"></tbody>
+      </table>
+    </section>
+
+    <div class="estadoVazio" id="estadoVazio" hidden>
+      <p>Nenhum usuário encontrado.</p>
+    </div>
+  </main>
+
+  <!-- Modal Confirmação -->
+  <div class="overlayModal" id="overlayConfirmacao" hidden>
+    <div class="modalConfirmacao" role="dialog" aria-modal="true" aria-labelledby="tituloConfirmacao">
+      <h3 id="tituloConfirmacao" class="tituloModal">Confirmar ação</h3>
+      <p id="mensagemConfirmacao" class="mensagemModal">Tem certeza?</p>
+      <div class="acoesModal">
+        <button id="botaoCancelar" class="botaoSecundario">Cancelar</button>
+        <button id="botaoConfirmar" class="botaoPerigo">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="footer"></div>
+</body>
+
+</html>

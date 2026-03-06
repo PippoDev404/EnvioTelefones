@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Login</title>
+    <script defer src="/config.js"></script>
+    <script defer type="module" src="login.js"></script>
+    <link rel="stylesheet" href="login.css">
+    <link rel="stylesheet" href="/1-componentes/main.css">
+    <link rel="stylesheet" href="/1-componentes/global.css">
+</head>
+
+<body>
+
+    <main class="paginaLogin">
+        <section class="cartaoLogin" aria-label="Login">
+
+            <div class="corpoCartao">
+                <h1 class="tituloLogin">Entrar</h1>
+
+                <div id="caixaAlerta" class="caixaAlerta" role="status" aria-live="polite"></div>
+
+                <form id="formularioLogin" class="formularioLogin" autocomplete="on" novalidate>
+                    <div class="campoFormulario">
+                        <label class="rotuloCampo" for="emailAdmin">E-mail</label>
+                        <div class="caixaEntrada">
+                            <div class="iconeEntrada" aria-hidden="true">
+                                <svg viewBox="0 0 24 24">
+                                    <path
+                                        d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Zm0 4-8 5L4 8V6l8 5 8-5v2Z" />
+                                </svg>
+                            </div>
+                            <input id="emailAdmin" name="emailAdmin" type="email" placeholder="seuemail@dominio.com"
+                                required />
+                        </div>
+                    </div>
+
+                    <div class="campoFormulario">
+                        <label class="rotuloCampo" for="senhaAdmin">Senha</label>
+                        <div class="caixaEntrada">
+                            <div class="iconeEntrada" aria-hidden="true">
+                                <svg viewBox="0 0 24 24">
+                                    <path
+                                        d="M12 1a5 5 0 0 0-5 5v4H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5Zm3 9H9V6a3 3 0 0 1 6 0v4Z" />
+                                </svg>
+                            </div>
+
+                            <input id="senhaAdmin" name="senhaAdmin" type="password" placeholder="••••••••" required
+                                minlength="6" />
+
+                            <button class="acaoEntrada" type="button" id="botaoAlternarSenha"
+                                aria-label="Mostrar senha">
+                                <svg id="iconeOlho" viewBox="0 0 24 24" width="18" height="18">
+                                    <path fill="rgba(255,255,255,.85)"
+                                        d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Z" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="linhaAcoes">
+                        <label class="caixaSelecao">
+                            <input type="checkbox" id="lembrarEmail" />
+                            Lembrar meu e-mail
+                        </label>
+
+                        <a class="linkAcao" href="#" id="linkEsqueciSenha">Esqueci minha senha</a>
+                    </div>
+
+                    <button class="botao botaoPrimario" id="botaoEntrar" type="submit">
+                        <span class="spinnerBotao" aria-hidden="true"></span>
+                        <span class="textoBotao">Entrar</span>
+                    </button>
+                </form>
+            </div>
+
+            <footer class="rodapeCartao">
+                <div class="observacaoRodape">
+                    © <span id="anoAtual"></span> • Validação no servidor recomendada.
+                </div>
+                <div class="pílulaAmbiente" id="pílulaAmbiente">ENV: local</div>
+            </footer>
+
+        </section>
+    </main>
+
+</body>
+
+</html>

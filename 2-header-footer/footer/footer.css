@@ -1,0 +1,125 @@
+.siteFooter {
+  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 44px 20px 18px;
+  margin-top: 40px;
+  width: 100%;
+}
+
+.footerInner {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.footerTop {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 30px;
+  padding-bottom: 18px;
+}
+
+.footerSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.footerTitle {
+  font-size: 15px;
+  font-weight: 650;
+  margin: 0 0 6px 0;
+  background: linear-gradient(120deg, #ffffff 0%, #e2e2e2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.footerText {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.7;
+}
+
+.footerLink {
+  color: rgba(255, 255, 255, 0.72);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  padding-bottom: 1px;
+  transition: 0.2s ease;
+}
+
+.footerLink:hover {
+  color: rgba(255, 255, 255, 0.95);
+  border-bottom-color: rgba(255, 255, 255, 0.35);
+}
+
+.footerLink:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.35);
+  outline-offset: 3px;
+  border-bottom-color: transparent;
+}
+
+.footerBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.footerBadge {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  padding: 6px 10px;
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+}
+
+.footerBottom {
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  padding-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.footerYear {
+  margin: 0;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.footerNav {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .siteFooter {
+    padding: 34px 15px 16px;
+    margin-top: 30px;
+  }
+
+  .footerTop {
+    gap: 20px;
+  }
+
+  .footerTitle {
+    font-size: 13px;
+  }
+
+  .footerText {
+    font-size: 11px;
+  }
+
+  .footerBottom {
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+}

@@ -1,0 +1,427 @@
+/* =========================
+   TÍTULOS
+========================= */
+.tituloPagina{
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  background: linear-gradient(120deg, var(--text) 0%, var(--text-muted) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.subtituloPagina{
+  margin: 8px 0 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* =========================
+   BOTÕES
+========================= */
+.botaoSecundario{
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--secondary);
+  color: var(--secondary-text);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.botaoSecundario:hover{
+  background: var(--secondary-hover);
+  box-shadow: var(--shadow);
+}
+
+.botaoPerigo{
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.55);
+  background: rgba(239, 68, 68, 0.14);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.botaoPerigo:hover{
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.75);
+  box-shadow: var(--shadow);
+}
+
+.botaoPerigo:disabled{
+  opacity: .5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.botaoAcao{
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.botaoAcao:hover{
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: var(--shadow);
+}
+
+.textoDica{
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* =========================
+   LAYOUT
+========================= */
+.painelMain{
+  flex: 1;
+  width: 100%;
+  padding: 40px 20px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.cabecalhoPainel{
+  text-align: center;
+  max-width: 900px;
+  margin: 0 auto 28px;
+}
+
+/* =========================
+   FILTROS
+========================= */
+.secaoFiltros{
+  display: flex;
+  gap: 12px;
+  max-width: 1200px;
+  margin: 0 auto 18px;
+  flex-wrap: wrap;
+}
+
+.inputBusca,
+.selectStatus{
+  flex: 1;
+  min-width: 160px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 12px;
+  text-align: center;
+}
+
+.inputBusca::placeholder{
+  color: var(--text-muted);
+}
+
+.inputBusca:focus,
+.selectStatus:focus{
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.selectStatus option{
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* =========================
+   TABELA
+========================= */
+.containerTabela{
+  max-width: 1200px;
+  margin: 0 auto;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.tabelaArquivos{
+  width: 100%;
+  border-collapse: collapse;
+  background: transparent;
+}
+
+.tabelaArquivos thead{
+  background: rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border);
+}
+
+/* ✅ Linhas entre TH e TD */
+.tabelaArquivos th,
+.tabelaArquivos td{
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--text);
+  text-align: center;
+  vertical-align: middle;
+  border-right: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.tabelaArquivos th:last-child,
+.tabelaArquivos td:last-child{
+  border-right: none;
+}
+
+.tabelaArquivos tbody tr:hover{
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ✅ nova coluna bolinha */
+.colunaIndicador{
+  width: 42px;
+}
+
+.colunaExcluir{
+  width: 170px;
+}
+
+.divExcluir{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.labelExcluirTodos{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.labelExcluirTodos input{
+  cursor: pointer;
+  transform: scale(1.05);
+}
+
+.checkboxLinha{
+  cursor: pointer;
+  transform: scale(1.05);
+}
+
+/* =========================
+   BOLINHA STATUS (NOVO)
+========================= */
+.bolinhaTabela{
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.06);
+}
+
+.bolinhaTabela.verde{
+  background: var(--success);
+}
+
+.bolinhaTabela.laranja{
+  background: var(--warning);
+}
+
+.bolinhaTabela.vermelha{
+  background: var(--danger);
+}
+
+/* legenda */
+.legendaStatus{
+  max-width: 1200px;
+  margin: 10px auto 0;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.itemLegenda{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* =========================
+   BADGES
+========================= */
+.badgeTipo{
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 900;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.badgeXlsx{ background: rgba(34, 197, 94, 0.14); color: var(--success); }
+.badgeXls { background: rgba(245, 158, 11, 0.14); color: var(--warning); }
+.badgeCsv { background: rgba(255, 255, 255, 0.10); color: var(--text); }
+.badgeOutro{ background: rgba(255, 255, 255, 0.08); color: var(--text-muted); }
+
+.badgeStatus{
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 900;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.statusProcessado{ background: rgba(34, 197, 94, 0.14); color: var(--success); }
+.statusPendente { background: rgba(245, 158, 11, 0.14); color: var(--warning); }
+.statusErro     { background: rgba(239, 68, 68, 0.14); color: var(--danger); }
+
+.tdAcoes{
+  width: 380px;
+}
+
+.acoesLinha{
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* =========================
+   ESTADO VAZIO + AÇÕES
+========================= */
+.estadoVazio{
+  max-width: 1200px;
+  margin: 18px auto 0;
+  text-align: center;
+  padding: 26px 18px;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.secaoAcoesTabela{
+  max-width: 1200px;
+  margin: 10px auto 0;
+}
+
+.acoesTabelaConteudo{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.notaLimpezaAutomatica{
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+  text-align: center;
+}
+
+.acoesExcluir{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* =========================
+   MODAL
+========================= */
+.overlayModal[hidden]{
+  display: none !important;
+}
+
+.overlayModal{
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.70);
+  display: grid;
+  place-items: center;
+  z-index: 9999;
+}
+
+.modalConfirmacao{
+  width: min(520px, calc(100% - 28px));
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+  padding: 18px;
+}
+
+.tituloModal{
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--text);
+  text-align: center;
+}
+
+.mensagemModal{
+  margin: 0 0 14px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  text-align: center;
+}
+
+.acoesModal{
+  margin-top: 18px;
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+}
+
+.opcoesColunas{
+  display: flex;
+  justify-content: center;
+  gap: 25px;
+  margin: 12px 0px 0px 0px;
+  color: var(--secondary-text);
+}
+
+.colunaToggle {
+  padding: 8px 14px;
+  border: 2px solid var(--border);
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  user-select: none;
+}
+
+/* Estado ativo */
+.colunaToggle.ativa {
+  border-color: var(--success);
+  background-color: rgba(34, 197, 94, 0.14);
+  color: var(--success);
+}
+
+/* Hover */
+.colunaToggle:hover {
+  border-color: var(--success);
+  background-color: rgba(34, 197, 94, 0.10);
+}

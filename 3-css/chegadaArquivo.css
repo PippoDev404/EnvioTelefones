@@ -1,0 +1,405 @@
+/* =========================
+   LAYOUT
+========================= */
+.painelMain {
+  flex: 1;
+  width: 100%;
+  padding: 40px 20px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.cabecalhoPainel {
+  text-align: center;
+  max-width: 980px;
+  margin: 0 auto 18px;
+}
+
+/* =========================
+   TÍTULOS
+========================= */
+.tituloPagina {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  background: linear-gradient(120deg, var(--text) 0%, var(--text-muted) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.subtituloPagina {
+  margin: 10px 0 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+/* =========================
+   BOTÕES
+========================= */
+.botaoSecundario {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--secondary);
+  color: var(--secondary-text);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.botaoSecundario:hover {
+  background: var(--secondary-hover);
+  box-shadow: var(--shadow);
+}
+
+.botaoPerigo {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.55);
+  background: rgba(239, 68, 68, 0.14);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.botaoPerigo:hover {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.75);
+  box-shadow: var(--shadow);
+}
+
+.botaoPerigo:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.botaoAcao {
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.botaoAcao:hover {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: var(--shadow);
+}
+
+.textoDica {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* =========================
+   FILTROS
+========================= */
+.secaoFiltros {
+  display: flex;
+  gap: 12px;
+  max-width: 1200px;
+  margin: 0 auto 14px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+}
+
+.inputBusca,
+.selectStatus {
+  flex: 1;
+  min-width: 180px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  text-align: center;
+  border: 1px solid var(--border);
+}
+
+/* input padrão */
+.inputBusca {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+
+.inputBusca::placeholder {
+  color: var(--text-muted);
+}
+
+/* select mais legível */
+.selectStatus {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* ✅ opções invertidas para ler quando abre */
+.selectStatus option {
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* focus */
+.inputBusca:focus,
+.selectStatus:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.contadorTopo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  min-width: 140px;
+}
+
+/* =========================
+   TABELA
+========================= */
+.containerTabela {
+  max-width: 1200px;
+  margin: 0 auto;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.tabelaArquivos {
+  width: 100%;
+  border-collapse: collapse;
+  background: transparent;
+}
+
+.tabelaArquivos thead {
+  background: rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border);
+}
+
+.tabelaArquivos th,
+.tabelaArquivos td {
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--text);
+  text-align: center;
+  vertical-align: middle;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tabelaArquivos th:last-child,
+.tabelaArquivos td:last-child {
+  border-right: none;
+}
+
+.tabelaArquivos tbody tr:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.nomeArquivo {
+  text-align: left !important;
+  font-weight: 900;
+  width: 250px;
+}
+
+.badgePartes {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 900;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, .80);
+}
+
+.acoesLinha {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.estadoVazio {
+  max-width: 1200px;
+  margin: 18px auto 0;
+  text-align: center;
+  padding: 26px 18px;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* =========================
+   DIALOG (MODAL) - CENTRALIZADO
+========================= */
+.dialogBase {
+  width: min(1100px, calc(100% - 28px));
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+  padding: 0;
+  color: var(--text);
+
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  margin: 0 !important;
+
+  max-height: min(78vh, 820px);
+  overflow: hidden;
+}
+
+.dialogBaseMenor {
+  width: min(520px, calc(100% - 28px));
+}
+
+.dialogBase::backdrop {
+  background: rgba(0, 0, 0, 0.70);
+}
+
+/* =========================
+   CONTEÚDO DO MODAL
+========================= */
+.dialogTopo {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.dialogTopoTxt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tituloModal {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--text);
+  text-align: left;
+}
+
+.mensagemModal {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  text-align: left;
+}
+
+.dialogConteudo {
+  padding: 14px;
+  overflow: auto;
+  max-height: calc(min(78vh, 820px) - 56px);
+}
+
+/* =========================
+   PREVIEW TABELA
+========================= */
+.tabelaPreviewWrap {
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tabelaPreview {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 780px;
+}
+
+.tabelaPreview th,
+.tabelaPreview td {
+  padding: 10px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  text-align: left;
+}
+
+.tabelaPreview thead th {
+  position: sticky;
+  top: 0;
+  background: rgba(255, 255, 255, 0.06);
+  z-index: 2;
+  color: rgba(255, 255, 255, 0.80);
+}
+
+/* =========================
+   PARTES (grid)
+========================= */
+.gridPartes {
+  display: grid;
+  grid-template-columns: 1.4fr 0.4fr 1.4fr 0.6fr;
+  gap: 12px;
+  align-items: end;
+}
+
+@media (max-width: 920px) {
+  .gridPartes {
+    grid-template-columns: 1fr;
+  }
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.campoAcao {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rotulo {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.60);
+}
+
+/* =========================
+   MODAL EXCLUIR
+========================= */
+.blocoConfirmacao {
+  display: grid;
+  gap: 12px;
+}
+
+.acoesConfirmacao {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}

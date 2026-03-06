@@ -1,0 +1,230 @@
+.paginaInicial {
+  max-width: 1200px;
+  margin: auto;
+  padding: 40px 20px;
+  color: var(--text);
+}
+
+.tituloSecao {
+  font-size: 22px;
+  margin-bottom: 16px;
+}
+
+.textoMuted {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* =========================
+   HERO
+========================= */
+
+.secaoHero {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 48px;
+  box-shadow: var(--shadow);
+  margin-bottom: 22px;
+}
+
+.heroConteudo {
+  display: flex;
+  justify-content: space-between;
+  gap: 40px;
+  flex-wrap: wrap;
+}
+
+.heroTexto {
+  flex: 1;
+  min-width: 320px;
+}
+
+.seloSistema {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tituloPrincipal {
+  font-size: 38px;
+  margin: 8px 0 10px;
+}
+
+.subtituloPrincipal {
+  margin-bottom: 24px;
+  color: var(--text-muted);
+}
+
+/* =========================
+   BOTÕES
+========================= */
+
+.acoesHero {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.botaoPrimario {
+  background: var(--primary);
+  color: var(--primary-text);
+  padding: 12px 20px;
+  border-radius: var(--radius);
+  font-weight: 600;
+  text-decoration: none;
+  transition: .2s;
+}
+
+.botaoPrimario:hover {
+  background: var(--primary-hover);
+}
+
+.botaoSecundario {
+  background: var(--secondary);
+  color: var(--secondary-text);
+  padding: 12px 20px;
+  border-radius: var(--radius);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  transition: .2s;
+}
+
+.botaoSecundario:hover {
+  background: var(--secondary-hover);
+}
+
+.botaoTerciario {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text);
+  padding: 12px 20px;
+  border-radius: var(--radius);
+  text-decoration: none;
+  transition: .2s;
+}
+
+.botaoTerciario:hover {
+  background: var(--surface-2);
+}
+
+/* =========================
+   STATUS
+========================= */
+
+.secaoStatus {
+  margin-bottom: 26px;
+}
+
+.statusCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+
+.statusTopo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.badgeStatus {
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.badgeOk {
+  border-color: rgba(46, 204, 113, 0.55);
+  background: rgba(46, 204, 113, 0.12);
+}
+
+.badgeWarn {
+  border-color: rgba(241, 196, 15, 0.55);
+  background: rgba(241, 196, 15, 0.12);
+}
+
+.badgeErr {
+  border-color: rgba(231, 76, 60, 0.55);
+  background: rgba(231, 76, 60, 0.12);
+}
+
+.statusGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.statusItem {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.statusValor {
+  display: block;
+  font-size: 18px;
+  margin-top: 8px;
+}
+
+.statusMini {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+/* =========================
+   CARDS AÇÕES
+========================= */
+
+.secaoAcoes {
+  margin-bottom: 40px;
+}
+
+.gradeCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.cardAcao {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px;
+  text-decoration: none;
+  color: var(--text);
+  transition: .2s;
+  box-shadow: var(--shadow);
+}
+
+.cardAcao:hover {
+  background: var(--surface-2);
+  transform: translateY(-4px);
+}
+
+.iconeCard {
+  font-size: 28px;
+  margin-bottom: 10px;
+} 
+
+/* =========================
+   RESPONSIVO
+========================= */
+
+@media (max-width: 900px) {
+  .heroConteudo {
+    flex-direction: column;
+  }
+}

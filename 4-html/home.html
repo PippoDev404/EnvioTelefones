@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Home - IBESPE Sistema de Envio</title>
+  <script defer src="/config.js"></script>
+  <link rel="icon" type="image/png" sizes="32x32" href="/0-imgs/IconIBESPE.jpg">
+
+  <!-- CSS da home -->
+  <link rel="stylesheet" href="/3-css/home.css">
+
+  <!-- globais -->
+  <link rel="stylesheet" href="/1-componentes/global.css">
+  <script defer type="module" src="/2-header-footer/header-footer.js"></script>
+
+  <!-- IndexedDB + Home -->
+  <script defer src="/5-js/db.js"></script>
+  <script defer type="module" src="/5-js/home.js"></script>
+</head>
+
+<body>
+  <div id="header"></div>
+
+  <main class="paginaInicial">
+
+    <!-- HERO -->
+    <section class="secaoHero">
+      <div class="heroConteudo">
+        <div class="heroTexto">
+          <span class="seloSistema">Sistema IBESPE • Gestão de Dados</span>
+
+          <h1 class="tituloPrincipal">Central de Envios e Administração</h1>
+
+          <p class="subtituloPrincipal">
+            Envie planilhas, acompanhe resultados e administre usuários, permissões
+            e arquivos com total controle.
+          </p>
+
+          <div class="acoesHero">
+            <a href="Envio.html" class="botaoPrimario">📤 Enviar arquivo</a>
+            <a href="dashboard.html" class="botaoSecundario" id="btnIrDashboard">📁 Meus arquivos</a>
+            <a href="administrar.html" class="botaoTerciario">🛠️ Administrar</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STATUS (sem "última atualização" e sem ID) -->
+    <section class="secaoStatus">
+      <div class="statusCard">
+        <div class="statusTopo">
+          <h2 class="tituloSecao">Status</h2>
+          <span class="badgeStatus" id="badgeStatus">Carregando…</span>
+        </div>
+
+        <div class="statusGrid">
+          <div class="statusItem">
+            <span class="textoMuted">Última visualização na Dashboard</span>
+            <strong class="statusValor" id="ultimaDashboard">—</strong>
+            <span class="textoMuted statusMini" id="ultimaDashboardDetalhe">—</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- AÇÕES RÁPIDAS -->
+    <section class="secaoAcoes">
+      <h2 class="tituloSecao">Acesso rápido</h2>
+
+      <div class="gradeCards">
+
+        <a href="Envio.html" class="cardAcao">
+          <span class="iconeCard">📤</span>
+          <h3>Enviar planilha</h3>
+          <p class="textoMuted">Upload de Excel ou CSV</p>
+        </a>
+
+        <a href="dashboard.html" class="cardAcao" id="cardDashboard">
+          <span class="iconeCard">📁</span>
+          <h3>Meus arquivos</h3>
+          <p class="textoMuted">Gerencie todos os envios</p>
+        </a>
+
+        <a href="administrar.html" class="cardAcao">
+          <span class="iconeCard">🛠️</span>
+          <h3>Administrar</h3>
+          <p class="textoMuted">Usuários, permissões e configurações</p>
+        </a>
+
+      </div>
+    </section>
+
+  </main>
+
+  <div id="footer"></div>
+</body>
+
+</html>
