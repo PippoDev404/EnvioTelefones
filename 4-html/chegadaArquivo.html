@@ -1,174 +1,24 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Arquivos - IBESPE Sistema de Envio</title>
-  <script defer src="/config.js"></script>
-  <link rel="icon" type="image/png" sizes="32x32" href="/0-imgs/IconIBESPE.jpg" />
+
+  <script defer src="../config.js"></script>
+  <link rel="icon" type="image/png" sizes="32x32" href="../0-imgs/IconIBESPE.jpg" />
 
   <!-- Global + header/footer -->
-  <link rel="stylesheet" href="/1-componentes/global.css" />
-  <script defer type="module" src="/2-header-footer/header-footer.js"></script>
+  <link rel="stylesheet" href="../1-componentes/global.css" />
+  <script defer type="module" src="../2-header-footer/header-footer.js"></script>
 
   <!-- Página -->
-  <link rel="stylesheet" href="/3-css/chegadaArquivo.css" />
+  <link rel="stylesheet" href="../3-css/chegadaArquivo.css" />
 
-  <!-- IndexedDB (mantido) -->
-  <script defer src="/5-js/db.js"></script>
+  <!-- IndexedDB -->
+  <script defer src="../5-js/db.js"></script>
 
   <!-- SheetJS -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <!-- JS da página -->
-  <script defer type="module" src="/5-js/chegadaArquivo.js"></script>
+  <script defer type="module" src="../5-js/chegadaArquivo.js"></script>
 </head>
-
-<body>
-  <div id="header"></div>
-
-  <main class="painelMain">
-    <section class="cabecalhoPainel">
-      <h1 class="tituloPagina">Arquivos Recebidos</h1>
-      <p class="subtituloPagina">
-        Visualize e baixe os arquivos recebidos do banco via n8n. As <strong>partes</strong> aparecem quando forem
-        detectadas pelo campo <code>Nº PESQ.</code>.
-      </p>
-    </section>
-
-    <section class="secaoFiltros">
-      <input id="inputBusca" class="inputBusca" type="text" placeholder="Buscar por nome do arquivo..." />
-
-      <select id="selectOrdenacao" class="selectStatus">
-        <option value="desc">Mais recentes</option>
-        <option value="asc">Mais antigos</option>
-        <option value="nome">Nome (A-Z)</option>
-      </select>
-
-      <div class="contadorTopo">
-        <span class="textoDica"><strong id="txtTotal">0</strong> arquivo(s)</span>
-      </div>
-    </section>
-
-    <section class="containerTabela">
-      <table class="tabelaArquivos" aria-label="Tabela de arquivos">
-        <thead>
-          <tr>
-            <th style="width: 70px;">Partes</th>
-            <th>Nome</th>
-            <th style="width: 170px;">Atualizado</th>
-            <th style="width: 120px;">Tamanho</th>
-            <th style="width: 320px;">Ações</th>
-          </tr>
-        </thead>
-        <tbody id="corpoTabelaArquivos"></tbody>
-      </table>
-    </section>
-
-    <div class="estadoVazio" id="estadoVazio" hidden>
-      <p>Nenhum arquivo encontrado.</p>
-    </div>
-  </main>
-
-  <!-- =========================
-       MODAL: VER ARQUIVO
-  ========================== -->
-  <dialog id="modalVer" class="dialogBase" aria-labelledby="modalVerTitulo">
-    <div class="dialogTopo">
-      <div class="dialogTopoTxt">
-        <h3 id="modalVerTitulo" class="tituloModal">Ver arquivo</h3>
-        <p id="modalVerSub" class="mensagemModal">Prévia das primeiras linhas.</p>
-      </div>
-
-      <button id="btnFecharVer" class="botaoSecundario" type="button">Fechar</button>
-    </div>
-
-    <div class="dialogConteudo">
-      <div class="tabelaPreviewWrap">
-        <table class="tabelaPreview" aria-label="Prévia CSV">
-          <thead id="previewHead"></thead>
-          <tbody id="previewBody"></tbody>
-        </table>
-      </div>
-    </div>
-  </dialog>
-
-  <!-- =========================
-       MODAL: PARTES
-  ========================== -->
-  <dialog id="modalPartes" class="dialogBase" aria-labelledby="modalPartesTitulo">
-    <div class="dialogTopo">
-      <div class="dialogTopoTxt">
-        <h3 id="modalPartesTitulo" class="tituloModal">Partes do arquivo</h3>
-        <p class="mensagemModal">Selecione uma parte disponível, depois ver ou baixar.</p>
-      </div>
-
-      <button id="btnFecharPartes" class="botaoSecundario" type="button">Fechar</button>
-    </div>
-
-    <div class="dialogConteudo">
-      <div class="gridPartes">
-        <div class="campo">
-          <label class="rotulo" for="selectParte">Parte</label>
-          <select id="selectParte" class="selectStatus"></select>
-          <small class="textoDica">A lista é dinâmica por arquivo.</small>
-        </div>
-
-        <div class="campoAcao">
-          <button id="btnVerParte" class="botaoSecundario" type="button">Ver parte</button>
-        </div>
-
-        <div class="campo">
-          <label class="rotulo" for="nomeDownloadParte">Nome do arquivo (opcional)</label>
-          <input id="nomeDownloadParte" class="inputBusca" type="text" placeholder="ex: parte-03.xlsx" />
-          <small class="textoDica">Se vazio, usa o nome sugerido.</small>
-        </div>
-
-        <div class="campoAcao">
-          <button id="btnDownloadParte" class="botaoPerigo" type="button">Download parte</button>
-        </div>
-      </div>
-
-      <div class="tabelaPreviewWrap" style="margin-top:12px;">
-        <table class="tabelaPreview" aria-label="Prévia da Parte">
-          <thead id="parteHead"></thead>
-          <tbody id="parteBody"></tbody>
-        </table>
-      </div>
-    </div>
-  </dialog>
-
-  <!-- =========================
-       MODAL: CONFIRMAR EXCLUSÃO
-  ========================== -->
-  <dialog id="modalExcluir" class="dialogBase dialogBaseMenor" aria-labelledby="modalExcluirTitulo">
-    <div class="dialogTopo">
-      <div class="dialogTopoTxt">
-        <h3 id="modalExcluirTitulo" class="tituloModal">Confirmar exclusão</h3>
-        <p id="modalExcluirSub" class="mensagemModal">Deseja excluir este arquivo?</p>
-      </div>
-
-      <button id="btnFecharExcluir" class="botaoSecundario" type="button">Fechar</button>
-    </div>
-
-    <div class="dialogConteudo">
-      <div class="blocoConfirmacao">
-        <p class="textoDica" id="txtExcluirNome" style="margin:0;"></p>
-
-        <div class="acoesConfirmacao">
-          <button id="btnCancelarExcluir" class="botaoSecundario" type="button">Cancelar</button>
-          <button id="btnConfirmarExcluir" class="botaoPerigo" type="button">Excluir</button>
-        </div>
-
-        <p class="textoDica" style="margin:10px 0 0 0;">
-          Essa ação remove do banco (<strong>entregas_atual</strong> e <strong>entregas_consolidado</strong>).
-        </p>
-      </div>
-    </div>
-  </dialog>
-
-  <div id="footer"></div>
-</body>
-
-</html>
