@@ -1,13 +1,13 @@
 {
-  "redirects": [
-    { "source": "/", "destination": "/7-login/login.html", "permanent": false },
-    { "source": "/login", "destination": "/7-login/login.html", "permanent": false },
-    { "source": "/home", "destination": "/4-html/home.html", "permanent": false },
-    { "source": "/dashboard", "destination": "/4-html/dashboard.html", "permanent": false },
-    { "source": "/envio", "destination": "/4-html/envio.html", "permanent": false },
-    { "source": "/arquivos", "destination": "/4-html/chegadaArquivo.html", "permanent": false },
-    { "source": "/chegada-arquivo", "destination": "/4-html/chegadaArquivo.html", "permanent": false },
-    { "source": "/administrar", "destination": "/4-html/administrar.html", "permanent": false },
-    { "source": "/adm-arquivo", "destination": "/4-html/admArquivo.html", "permanent": false }
+  "rewrites": [
+    { "source": "/", "destination": "/7-login/login.html" },
+    { "source": "/login", "destination": "/7-login/login.html" },
+    { "source": "/home", "destination": "/4-html/home.html" },
+    { "source": "/dashboard", "destination": "/4-html/dashboard.html" },
+    { "source": "/envio", "destination": "/4-html/envio.html" },
+    { "source": "/arquivos", "destination": "/4-html/chegadaArquivo.html" },
+    { "source": "/chegada-arquivo", "destination": "/4-html/chegadaArquivo.html" },
+    { "source": "/administrar", "destination": "/4-html/administrar.html" },
+    { "source": "/adm-arquivo", "destination": "/4-html/admArquivo.html" }
   ]
 }
