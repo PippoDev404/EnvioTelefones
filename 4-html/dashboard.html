@@ -8,14 +8,10 @@
   <script defer src="/config.js"></script>
   <link rel="icon" type="image/png" sizes="32x32" href="/0-imgs/IconIBESPE.jpg" />
 
-  <!-- CSS (dashboard) -->
   <link rel="stylesheet" href="/3-css/dashboard.css" />
-
-  <!-- Global + header/footer -->
   <link rel="stylesheet" href="/1-componentes/global.css" />
-  <script defer type="module" src="/2-header-footer/header-footer.js"></script>
 
-  <!-- IndexedDB util + dashboard -->
+  <script defer type="module" src="/2-header-footer/header-footer.js"></script>
   <script defer src="/5-js/db.js"></script>
   <script defer type="module" src="/5-js/dashboard.js"></script>
 </head>
@@ -75,7 +71,6 @@
     </section>
   </main>
 
-  <!-- Modal confirmação -->
   <div class="overlayModal" id="overlayConfirmacao" hidden>
     <div class="modalConfirmacao" role="dialog" aria-modal="true" aria-labelledby="tituloConfirmacao">
       <h3 id="tituloConfirmacao" class="tituloModal">Confirmar exclusão</h3>
@@ -88,8 +83,6 @@
     </div>
   </div>
 
-  <!-- Modal Opções -->
-  <!-- Modal Opções (mantém Colunas + adiciona Número/Data/Link) -->
   <div class="overlayModal" id="overlayOpcoes" hidden>
     <div class="modalConfirmacao" role="dialog" aria-modal="true" aria-labelledby="tituloOpcoes">
       <h3 id="tituloOpcoes" class="tituloModal">Opções</h3>
@@ -100,7 +93,6 @@
         <br />
       </p>
 
-      <!-- ✅ Bloco do link (novo) -->
       <div class="opcoesColunas" style="display:grid; gap:12px;">
         <div style="display:grid; gap:6px;">
           <label for="inputNumeroPesquisa" style="font-weight:600;">Número da pesquisa</label>
@@ -123,7 +115,6 @@
         </div>
       </div>
 
-      <!-- ✅ Colunas (mantido como era antes, embaixo) -->
       <h3 id="tituloColunas" class="tituloModal">Colunas a enviar</h3>
       <p class="mensagemModal" id="subtituloColunas">Selecione o que o pesquisador poderá ver.</p>
 
