@@ -5,29 +5,19 @@ import { supabase } from "../8-src/supabaseClient.js";
 const user = await requireAuth({ redirectTo: "../7-login/login.html" });
 if (!user) throw new Error("Sem sessão");
 
-// exemplo de botão logout:
 document.querySelector("#btnLogout")?.addEventListener("click", () => logout());
 
 /* =========================
    CONFIG
 ========================= */
-
-// ✅ AJUSTE AQUI SE NECESSÁRIO
 const SUPABASE_ARQUIVOS_TABLE = "arquivos";
 const SUPABASE_STORAGE_BUCKET = "arquivos";
 
-// ✅ WEBHOOK DO LOTE (Lançar partes - geral, 1 POST)
 const N8N_WEBHOOK_URL_LOTE = "https://n8n.srv962474.hstgr.cloud/webhook/envioArquivos";
-
-// ✅ WEBHOOK DO INDIVIDUAL (botões "Lançar Pxx", 1 POST por item)
 const N8N_WEBHOOK_URL_INDIVIDUAL = "https://n8n.srv962474.hstgr.cloud/webhook/envioArquivos";
-
-// ✅ WEBHOOK EXCLUIR (apaga as 2 últimas mensagens enviadas)
 const N8N_WEBHOOK_URL_EXCLUIR = "https://n8n.srv962474.hstgr.cloud/webhook/excluir";
 
 const FETCH_TIMEOUT_MS = 30000;
-
-// Coluna que define parte/sobra
 const nomeColunaParte = "Nº PESQ.";
 const maxLinhasPreview = 80;
 
@@ -54,10 +44,11 @@ const corpoTabelaSobras = document.getElementById("corpoTabelaSobras");
 const estadoVazioSobras = document.getElementById("estadoVazioSobras");
 
 const botaoRecarregar = document.getElementById("botaoRecarregar");
+const botaoDownloadGeralCsv = document.getElementById("botaoDownloadGeralCsv");
+const botaoDownloadGeralPdf = document.getElementById("botaoDownloadGeralPdf");
 const botaoLancarPartes = document.getElementById("botaoLancarPartes");
 const textoDicaLancamento = document.getElementById("textoDicaLancamento");
 
-// Modal visualizar
 const overlayVisualizar = document.getElementById("overlayVisualizar");
 const tituloVisualizar = document.getElementById("tituloVisualizar");
 const botaoFecharVisualizar = document.getElementById("botaoFecharVisualizar");
@@ -71,14 +62,12 @@ let arquivoKeyAtual = null;
 let idArquivoAtual = null;
 let registroArquivoAtual = null;
 
-let usuariosDisponiveis = []; // [{id, parte, telegramId, telegramUsername, status?}]
+let usuariosDisponiveis = [];
+let partesGeradas = [];
+let sobrasGeradas = [];
 
-// principais e sobras separados
-let partesGeradas = []; // [{chaveParte:"P01", ...}]
-let sobrasGeradas = []; // [{chaveParte:"S01.1", labelVisivel:"P01.1", ...}]
-
-let selecaoUsuarioPorParte = new Map(); // chaveParte(P01) -> usuarioId
-let selecaoUsuarioPorSobra = new Map(); // chaveSobra(S01.1) -> usuarioId
+let selecaoUsuarioPorParte = new Map();
+let selecaoUsuarioPorSobra = new Map();
 
 let chaveParteAbertaNoModal = null;
 
@@ -181,20 +170,312 @@ function obterAdminAtualLocal() {
 async function getAccessTokenOrThrow() {
   const { data, error } = await supabase.auth.getSession();
 
-  if (error) {
-    throw new Error(error.message || "Não foi possível obter a sessão.");
-  }
+  if (error) throw new Error(error.message || "Não foi possível obter a sessão.");
 
   const token = data?.session?.access_token;
-  if (!token) {
-    throw new Error("Usuário sem sessão ativa.");
-  }
+  if (!token) throw new Error("Usuário sem sessão ativa.");
 
   return token;
 }
 
+function slugNomeArquivo(txt) {
+  return String(txt || "arquivo")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/\.+$/g, "")
+    .trim() || "arquivo";
+}
+
+function removerExtensao(nome) {
+  return String(nome || "arquivo").replace(/\.[^.]+$/, "");
+}
+
+function escaparHtml(valor) {
+  return String(valor ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function nomeArquivoDaParte(item, extensao = "csv") {
+  const base = slugNomeArquivo(removerExtensao(registroArquivoAtual?.nome || "arquivo"));
+  const label = slugNomeArquivo(item?.labelVisivel || item?.labelParte || item?.chaveParte || "parte");
+  return `${base}-${label}.${extensao}`;
+}
+
+function baixarBlobComoArquivo(blob, nomeArquivo) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nomeArquivo;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function baixarCsvItem(item) {
+  const nome = nomeArquivoDaParte(item, "csv");
+  const blob = new Blob([item?.csv || ""], { type: "text/csv;charset=utf-8" });
+  baixarBlobComoArquivo(blob, nome);
+}
+
 /* =========================
-   ✅ arquivoKey (estável)
+   CSV -> MATRIZ (SEPARA COLUNAS CERTO)
+========================= */
+function csvParaMatriz(csv) {
+  if (!window.XLSX) return [];
+
+  try {
+    const wb = window.XLSX.read(csv || "", {
+      type: "string",
+      raw: false,
+      codepage: 65001
+    });
+
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    return window.XLSX.utils.sheet_to_json(ws, {
+      header: 1,
+      defval: "",
+      raw: false,
+      blankrows: false
+    });
+  } catch (e) {
+    console.warn("Falha ao converter CSV para matriz:", e);
+    return [];
+  }
+}
+
+function abrirJanelaImpressaoPdf(item) {
+  const matriz = csvParaMatriz(item?.csv || "");
+  if (!matriz.length) {
+    alert("Não há dados para gerar o PDF.");
+    return;
+  }
+
+  const nome = nomeArquivoDaParte(item, "pdf");
+  const headers = matriz[0] || [];
+  const linhas = matriz.slice(1);
+
+  const thead = headers.map((c) => `<th>${escaparHtml(c)}</th>`).join("");
+  const tbody = linhas
+    .map((linha) => {
+      const tds = headers.map((_, idx) => `<td>${escaparHtml(linha[idx] ?? "")}</td>`).join("");
+      return `<tr>${tds}</tr>`;
+    })
+    .join("");
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+      <meta charset="UTF-8" />
+      <title>${escaparHtml(nome)}</title>
+      <style>
+        body{
+          font-family: Arial, Helvetica, sans-serif;
+          margin: 16px;
+          color:#111;
+        }
+        h1{
+          font-size:16px;
+          margin:0 0 8px 0;
+        }
+        .meta{
+          font-size:11px;
+          margin-bottom:10px;
+          line-height:1.4;
+        }
+        table{
+          width:100%;
+          border-collapse:collapse;
+          table-layout:auto;
+          font-size:9px;
+        }
+        th,td{
+          border:1px solid #999;
+          padding:4px 5px;
+          text-align:left;
+          vertical-align:top;
+          word-break:break-word;
+        }
+        thead{
+          background:#eee;
+        }
+      </style>
+    </head>
+    <body>
+      <h1>${escaparHtml(nome)}</h1>
+      <div class="meta">
+        Parte: <strong>${escaparHtml(item?.labelVisivel || item?.labelParte || item?.chaveParte || "—")}</strong><br>
+        Gerado em: <strong>${escaparHtml(obterDataHoraBr())}</strong>
+      </div>
+      <table>
+        <thead><tr>${thead}</tr></thead>
+        <tbody>${tbody}</tbody>
+      </table>
+    </body>
+    </html>
+  `;
+
+  const win = window.open("", "_blank");
+  if (!win) {
+    alert("O navegador bloqueou a janela de impressão/PDF.");
+    return;
+  }
+
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+
+  setTimeout(() => {
+    win.focus();
+    win.print();
+  }, 300);
+}
+
+async function baixarPdfItem(item) {
+  const nome = nomeArquivoDaParte(item, "pdf");
+  const matriz = csvParaMatriz(item?.csv || "");
+
+  if (!matriz.length) {
+    alert("Não há dados para gerar o PDF.");
+    return;
+  }
+
+  if (window.jspdf?.jsPDF) {
+    try {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "pt",
+        format: "a4"
+      });
+
+      const headers = matriz[0] || [];
+      const rows = matriz.slice(1);
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      const margemX = 24;
+      const margemY = 24;
+      const larguraUtil = pageWidth - (margemX * 2);
+
+      let y = margemY;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.text(nome, margemX, y);
+
+      y += 16;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(`Parte: ${item?.labelVisivel || item?.labelParte || item?.chaveParte || "—"}`, margemX, y);
+      y += 12;
+      y += 18;
+
+      const colCount = Math.max(headers.length, 1);
+      const colWidth = larguraUtil / colCount;
+      const lineHeight = 12;
+
+      const desenharCabecalho = () => {
+        doc.setFont("helvetica", "bold");
+        headers.forEach((header, idx) => {
+          const x = margemX + (idx * colWidth);
+          doc.rect(x, y - 9, colWidth, lineHeight);
+          doc.text(String(header ?? "").slice(0, 20), x + 2, y);
+        });
+        y += lineHeight;
+        doc.setFont("helvetica", "normal");
+      };
+
+      desenharCabecalho();
+
+      for (const row of rows) {
+        if (y > pageHeight - 30) {
+          doc.addPage();
+          y = margemY;
+          desenharCabecalho();
+        }
+
+        headers.forEach((_, idx) => {
+          const x = margemX + (idx * colWidth);
+          const valor = String(row[idx] ?? "").slice(0, 20);
+          doc.rect(x, y - 9, colWidth, lineHeight);
+          doc.text(valor, x + 2, y);
+        });
+
+        y += lineHeight;
+      }
+
+      doc.save(nome);
+      return;
+    } catch (e) {
+      console.warn("Falha ao gerar PDF com jsPDF. Usando impressão.", e);
+    }
+  }
+
+  abrirJanelaImpressaoPdf(item);
+}
+
+function baixarCsvDireto(nomeArquivo, conteudo) {
+  const blob = new Blob([conteudo], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nomeArquivo;
+  link.style.display = "none";
+
+  document.body.appendChild(link);
+  link.click();
+
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    link.remove();
+  }, 1000);
+}
+
+async function baixarTodasAsPartesGeraisCsv() {
+  if (!partesGeradas.length) {
+    alert("Nenhuma parte encontrada para download.");
+    return;
+  }
+
+  for (let i = 0; i < partesGeradas.length; i++) {
+    const parte = partesGeradas[i];
+    const nome = nomeArquivoDaParte(parte, "csv");
+    baixarCsvDireto(nome, parte.csv || "");
+
+    await new Promise((resolve) => setTimeout(resolve, 800));
+  }
+}
+
+async function baixarTodasAsPartesGeraisPdf() {
+  if (!partesGeradas.length) {
+    alert("Nenhuma parte encontrada para download.");
+    return;
+  }
+
+  if (!window.jspdf?.jsPDF) {
+    alert("Para download geral em PDF, adicione o jsPDF no HTML. Sem ele, o navegador pode bloquear várias janelas.");
+    return;
+  }
+
+  for (let i = 0; i < partesGeradas.length; i++) {
+    const parte = partesGeradas[i];
+    await baixarPdfItem(parte);
+    await new Promise((resolve) => setTimeout(resolve, 800));
+  }
+}
+
+/* =========================
+   arquivoKey (estável)
 ========================= */
 function obterArquivoKeyAtual() {
   const k =
@@ -219,8 +500,7 @@ async function fetchComTimeout(url, options = {}, timeoutMs = 30000) {
   const id = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const resp = await fetch(url, { ...options, signal: controller.signal });
-    return resp;
+    return await fetch(url, { ...options, signal: controller.signal });
   } catch (err) {
     if (err?.name === "AbortError") {
       throw new Error(`Timeout após ${timeoutMs}ms ao chamar ${url}`);
@@ -232,7 +512,7 @@ async function fetchComTimeout(url, options = {}, timeoutMs = 30000) {
 }
 
 /* =========================
-   ✅ EXCLUIR (ANTES DE ENVIAR)
+   EXCLUIR (ANTES DE ENVIAR)
 ========================= */
 async function excluirUltimasMensagensAntesDeEnviar(contexto = "") {
   const token = await getAccessTokenOrThrow();
@@ -268,7 +548,7 @@ async function excluirUltimasMensagensAntesDeEnviar(contexto = "") {
 }
 
 /* =========================
-   TELEGRAM (tolerante)
+   TELEGRAM
 ========================= */
 function obterTelegramDoUsuario(u) {
   const rawId =
@@ -357,7 +637,7 @@ function obterIdNumericoDaUrl() {
 }
 
 /* =========================
-   PARTE vs SOBRA — NORMALIZAÇÃO
+   PARTE vs SOBRA
 ========================= */
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -447,21 +727,23 @@ function abrirModalVisualizar(chave, origem = "parte") {
 
   chaveParteAbertaNoModal = chave;
 
-  if (tituloVisualizar) tituloVisualizar.textContent = `Visualizar ${item.labelVisivel || item.labelParte || item.chaveParte}`;
+  if (tituloVisualizar) {
+    tituloVisualizar.textContent = `Visualizar ${item.labelVisivel || item.labelParte || item.chaveParte}`;
+  }
 
   if (infoVisualizar) {
-    const total = item.totalLinhas;
-    const tamanho = item.tamanhoTexto;
     infoVisualizar.innerHTML =
       `${origem === "sobra" ? "Sobra" : "Parte"} <strong>${item.labelVisivel || item.labelParte || item.chaveParte}</strong> — ` +
-      `<strong>${total}</strong> linha(s) — <strong>${tamanho}</strong>`;
+      `<strong>${item.totalLinhas}</strong> linha(s) — <strong>${item.tamanhoTexto}</strong>`;
   }
 
   renderizarTabelaPreviewModal(item.csv);
   if (overlayVisualizar) overlayVisualizar.hidden = false;
 
   const geoAtivo = listaGeoAtiva(registroArquivoAtual?.colunasVisiveis);
-  infoVisualizar.innerHTML += `<br/>Colunas geo enviadas: <strong>${geoAtivo}</strong>`;
+  if (infoVisualizar) {
+    infoVisualizar.innerHTML += `<br/>Colunas geo enviadas: <strong>${geoAtivo}</strong>`;
+  }
 }
 
 function fecharModalVisualizar() {
@@ -475,36 +757,38 @@ function renderizarTabelaPreviewModal(csv) {
 
   tabelaModal.innerHTML = "";
 
-  const linhas = String(csv || "")
-    .split("\n")
-    .filter((l) => l.trim().length > 0);
+  const matriz = csvParaMatriz(csv);
 
-  if (!linhas.length) {
+  if (!matriz.length) {
     tabelaModal.innerHTML = "<tr><td>Nenhum dado para visualizar.</td></tr>";
     return;
   }
 
-  const cabecalho = (linhas[0] || "").split(",").map((c) => c.replace(/^"|"$/g, ""));
-  const dados = linhas.slice(1, 1 + maxLinhasPreview);
+  const cabecalho = matriz[0] || [];
+  const dados = matriz.slice(1, 1 + maxLinhasPreview);
 
   const thead = document.createElement("thead");
   const trHead = document.createElement("tr");
+
   for (const col of cabecalho) {
     const th = document.createElement("th");
-    th.textContent = col;
+    th.textContent = String(col ?? "");
     trHead.appendChild(th);
   }
+
   thead.appendChild(trHead);
 
   const tbody = document.createElement("tbody");
+
   for (const linha of dados) {
     const tr = document.createElement("tr");
-    const cols = linha.split(",");
-    for (const c of cols) {
+
+    for (let i = 0; i < cabecalho.length; i++) {
       const td = document.createElement("td");
-      td.textContent = c.replace(/^"|"$/g, "");
+      td.textContent = String(linha[i] ?? "");
       tr.appendChild(td);
     }
+
     tbody.appendChild(tr);
   }
 
@@ -512,13 +796,16 @@ function renderizarTabelaPreviewModal(csv) {
   tabelaModal.appendChild(tbody);
 }
 
-if (botaoFecharVisualizar) botaoFecharVisualizar.addEventListener("click", fecharModalVisualizar);
-if (overlayVisualizar)
-  overlayVisualizar.addEventListener("click", (e) => {
-    if (e.target === overlayVisualizar) fecharModalVisualizar();
-  });
+botaoFecharVisualizar?.addEventListener("click", fecharModalVisualizar);
+
+overlayVisualizar?.addEventListener("click", (e) => {
+  if (e.target === overlayVisualizar) fecharModalVisualizar();
+});
+
 window.addEventListener("keydown", (e) => {
-  if (overlayVisualizar && !overlayVisualizar.hidden && e.key === "Escape") fecharModalVisualizar();
+  if (overlayVisualizar && !overlayVisualizar.hidden && e.key === "Escape") {
+    fecharModalVisualizar();
+  }
 });
 
 /* =========================
@@ -545,8 +832,8 @@ function criarBotaoLancar({ texto, tipo, chave }) {
       btn.textContent = "Enviando…";
 
       const resp = await enviarParteIndividualParaN8n({ tipo, chave });
-
       const lancamentoId = resp?.lancamentoId || resp?.id || "";
+
       alert(
         `✅ Enviado!\n` +
         `Item: ${texto}\n` +
@@ -568,7 +855,56 @@ function criarBotaoLancar({ texto, tipo, chave }) {
 }
 
 /* =========================
-   SELECT DE USUÁRIOS (limpo)
+   BOTÕES DE AÇÕES
+========================= */
+function criarBotaoAcaoPequeno({ texto, titulo, onClick }) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "botaoSecundario botaoAcaoPequeno";
+  btn.textContent = texto;
+  btn.title = titulo || "";
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+function criarContainerAcoesItem(item, origem = "parte") {
+  const div = document.createElement("div");
+  div.className = "containerAcoes";
+
+  const btnVisualizar = criarBotaoAcaoPequeno({
+    texto: "👁 Visualizar",
+    titulo: "Visualizar",
+    onClick: () => abrirModalVisualizar(item.chaveParte, origem),
+  });
+
+  const btnPdf = criarBotaoAcaoPequeno({
+    texto: "📄 PDF",
+    titulo: "Baixar PDF",
+    onClick: async () => {
+      try {
+        await baixarPdfItem(item);
+      } catch (e) {
+        console.error(e);
+        alert(`Falha ao gerar PDF.\n\n${e?.message || e}`);
+      }
+    },
+  });
+
+  const btnCsv = criarBotaoAcaoPequeno({
+    texto: "⬇ CSV",
+    titulo: "Baixar CSV",
+    onClick: () => baixarCsvItem(item),
+  });
+
+  div.appendChild(btnVisualizar);
+  div.appendChild(btnPdf);
+  div.appendChild(btnCsv);
+
+  return div;
+}
+
+/* =========================
+   SELECT DE USUÁRIOS
 ========================= */
 function criarSelectUsuarios({ valorSelecionado, onChange }) {
   const select = document.createElement("select");
@@ -604,6 +940,7 @@ function renderizarTabelaPartes() {
     if (estadoVazioPartes) estadoVazioPartes.hidden = false;
     return;
   }
+
   if (estadoVazioPartes) estadoVazioPartes.hidden = true;
 
   for (const parte of partesGeradas) {
@@ -618,13 +955,8 @@ function renderizarTabelaPartes() {
     const tdTamanho = document.createElement("td");
     tdTamanho.textContent = parte.tamanhoTexto;
 
-    const tdVisualizar = document.createElement("td");
-    const btnVisualizar = document.createElement("button");
-    btnVisualizar.type = "button";
-    btnVisualizar.className = "botaoSecundario";
-    btnVisualizar.textContent = "👁 Visualizar";
-    btnVisualizar.addEventListener("click", () => abrirModalVisualizar(parte.chaveParte, "parte"));
-    tdVisualizar.appendChild(btnVisualizar);
+    const tdAcoes = document.createElement("td");
+    tdAcoes.appendChild(criarContainerAcoesItem(parte, "parte"));
 
     const tdUsuario = document.createElement("td");
     const sel = criarSelectUsuarios({
@@ -651,7 +983,7 @@ function renderizarTabelaPartes() {
     tr.appendChild(tdParte);
     tr.appendChild(tdLinhas);
     tr.appendChild(tdTamanho);
-    tr.appendChild(tdVisualizar);
+    tr.appendChild(tdAcoes);
     tr.appendChild(tdUsuario);
     tr.appendChild(tdLancar);
 
@@ -668,6 +1000,7 @@ function renderizarTabelaSobras() {
     if (estadoVazioSobras) estadoVazioSobras.hidden = false;
     return;
   }
+
   if (estadoVazioSobras) estadoVazioSobras.hidden = true;
 
   for (const sobra of sobrasGeradas) {
@@ -682,13 +1015,8 @@ function renderizarTabelaSobras() {
     const tdTamanho = document.createElement("td");
     tdTamanho.textContent = sobra.tamanhoTexto;
 
-    const tdVisualizar = document.createElement("td");
-    const btnVisualizar = document.createElement("button");
-    btnVisualizar.type = "button";
-    btnVisualizar.className = "botaoSecundario";
-    btnVisualizar.textContent = "👁 Visualizar";
-    btnVisualizar.addEventListener("click", () => abrirModalVisualizar(sobra.chaveParte, "sobra"));
-    tdVisualizar.appendChild(btnVisualizar);
+    const tdAcoes = document.createElement("td");
+    tdAcoes.appendChild(criarContainerAcoesItem(sobra, "sobra"));
 
     const tdUsuario = document.createElement("td");
     const sel = criarSelectUsuarios({
@@ -715,7 +1043,7 @@ function renderizarTabelaSobras() {
     tr.appendChild(tdSobra);
     tr.appendChild(tdLinhas);
     tr.appendChild(tdTamanho);
-    tr.appendChild(tdVisualizar);
+    tr.appendChild(tdAcoes);
     tr.appendChild(tdUsuario);
     tr.appendChild(tdLancar);
 
@@ -730,7 +1058,6 @@ function atualizarEstadoBotaoLancar() {
   const selPrincipais = selecaoUsuarioPorParte.size;
 
   const pode = usuariosDisponiveis.length > 0 && totalPrincipais > 0 && selPrincipais === totalPrincipais;
-
   botaoLancarPartes.disabled = !pode;
 
   if (textoDicaLancamento) {
@@ -752,7 +1079,7 @@ function atualizarEstadoBotaoLancar() {
 }
 
 /* =========================
-   COLUNAS GEO — FILTRO
+   COLUNAS GEO
 ========================= */
 function normalizarChave(ch) {
   return String(ch || "")
@@ -765,7 +1092,6 @@ function normalizarChave(ch) {
 function detectarChavesGeo(objPrimeiraLinha) {
   const chaves = Object.keys(objPrimeiraLinha || {});
   const norm = chaves.map((k) => ({ key: k, n: normalizarChave(k) }));
-
   const achar = (pred) => norm.find((x) => pred(x.n))?.key || null;
 
   const estadoKey =
@@ -833,9 +1159,12 @@ function gerarCsvDaParte(linhas) {
 
 function separarPorPartesESobras(linhasJson, colunasVisiveis) {
   if (!Array.isArray(linhasJson) || linhasJson.length === 0) return { principais: [], sobras: [] };
+
   const geoKeys = detectarChavesGeo(linhasJson[0]);
   const chaveColuna = encontrarChaveColunaPrimeiraLinha(linhasJson[0]);
-  if (!chaveColuna) throw new Error(`Não encontrei a coluna "${nomeColunaParte}". Verifique o nome no Excel.`);
+  if (!chaveColuna) {
+    throw new Error(`Não encontrei a coluna "${nomeColunaParte}". Verifique o nome no Excel.`);
+  }
 
   const mapaPrincipais = new Map();
   const mapaSobras = new Map();
@@ -884,7 +1213,6 @@ function separarPorPartesESobras(linhasJson, colunasVisiveis) {
     const csv = gerarCsvDaParte(linhasFiltradas);
     const tamanhoBytes = estimarTamanhoCsv(csv);
     const cls = metaSobras.get(key);
-
     const labelVisivel = cls?.label ? cls.label.replace(/^S/, "P") : key.replace(/^S/, "P");
 
     sobras.push({
@@ -908,7 +1236,7 @@ function separarPorPartesESobras(linhasJson, colunasVisiveis) {
 }
 
 /* =========================
-   ✅ CARREGAR USUÁRIOS (SUPABASE primeiro)
+   CARREGAR USUÁRIOS
 ========================= */
 async function carregarUsuariosDoSupabase() {
   const ownerId = user?.id;
@@ -937,10 +1265,8 @@ async function carregarUsuariosDoSupabase() {
 
 async function carregarUsuariosDoIndexedDbFallback() {
   if (!window.ibeDb || typeof window.ibeDb.listarUsuariosDb !== "function") return [];
-
   const admin = obterAdminAtualLocal();
-  const lista = await window.ibeDb.listarUsuariosDb({ adminId: admin.id });
-  return lista || [];
+  return await window.ibeDb.listarUsuariosDb({ adminId: admin.id }) || [];
 }
 
 async function carregarUsuarios() {
@@ -970,14 +1296,12 @@ async function carregarUsuarios() {
 }
 
 /* =========================
-   ✅ SUPABASE - ARQUIVOS
+   SUPABASE - ARQUIVOS
 ========================= */
 function isBlobLike(valor) {
   return (
     valor instanceof Blob ||
-    (valor &&
-      typeof valor === "object" &&
-      typeof valor.arrayBuffer === "function")
+    (valor && typeof valor === "object" && typeof valor.arrayBuffer === "function")
   );
 }
 
@@ -991,9 +1315,7 @@ function base64ParaBlob(base64, mimeType = "application/octet-stream") {
   const len = bin.length;
   const bytes = new Uint8Array(len);
 
-  for (let i = 0; i < len; i++) {
-    bytes[i] = bin.charCodeAt(i);
-  }
+  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
 
   return new Blob([bytes], { type: realMime });
 }
@@ -1008,21 +1330,15 @@ function primeiroValor(obj, campos = []) {
 }
 
 function extrairArquivoKeyDoRegistro(reg) {
-  return String(
-    primeiroValor(reg, ["arquivoKey", "arquivo_key", "key"]) || ""
-  ).trim();
+  return String(primeiroValor(reg, ["arquivoKey", "arquivo_key", "key"]) || "").trim();
 }
 
 function extrairNomeArquivoDoRegistro(reg) {
-  return String(
-    primeiroValor(reg, ["nome", "name", "nome_arquivo", "filename", "file_name"]) || "arquivo"
-  ).trim();
+  return String(primeiroValor(reg, ["nome", "name", "nome_arquivo", "filename", "file_name"]) || "arquivo").trim();
 }
 
 function extrairStatusArquivoDoRegistro(reg) {
-  return String(
-    primeiroValor(reg, ["status", "situacao"]) || "—"
-  ).trim();
+  return String(primeiroValor(reg, ["status", "situacao"]) || "—").trim();
 }
 
 function extrairTamanhoBytesDoRegistro(reg) {
@@ -1032,21 +1348,15 @@ function extrairTamanhoBytesDoRegistro(reg) {
 }
 
 function extrairDataArquivoDoRegistro(reg) {
-  return (
-    primeiroValor(reg, ["data", "created_at", "criado_em", "uploaded_at", "updated_at"]) || ""
-  );
+  return primeiroValor(reg, ["data", "created_at", "criado_em", "uploaded_at", "updated_at"]) || "";
 }
 
 function extrairColunasVisiveisDoRegistro(reg) {
-  return (
-    primeiroValor(reg, ["colunasVisiveis", "colunas_visiveis"]) || {}
-  );
+  return primeiroValor(reg, ["colunasVisiveis", "colunas_visiveis"]) || {};
 }
 
 function extrairOpcoesPesquisaDoRegistro(reg) {
-  return (
-    primeiroValor(reg, ["opcoesPesquisa", "opcoes_pesquisa"]) || {}
-  );
+  return primeiroValor(reg, ["opcoesPesquisa", "opcoes_pesquisa"]) || {};
 }
 
 function extrairMimeTypeDoRegistro(reg) {
@@ -1093,10 +1403,7 @@ function normalizarRegistroArquivoSupabase(reg) {
 
 async function buscarRegistroPorCampo({ campo, valor, ownerId }) {
   try {
-    let query = supabase
-      .from(SUPABASE_ARQUIVOS_TABLE)
-      .select("*")
-      .limit(1);
+    let query = supabase.from(SUPABASE_ARQUIVOS_TABLE).select("*").limit(1);
 
     if (ownerId) query = query.eq("owner_id", ownerId);
     query = query.eq(campo, valor);
@@ -1105,8 +1412,6 @@ async function buscarRegistroPorCampo({ campo, valor, ownerId }) {
 
     if (error) {
       const msg = String(error?.message || "").toLowerCase();
-
-      // ignora se a coluna não existir
       if (
         msg.includes("column") ||
         msg.includes("does not exist") ||
@@ -1156,21 +1461,15 @@ async function buscarRegistroArquivoNoSupabase({ arquivoKey, idNumerico, ownerId
 }
 
 async function baixarBlobDoStorage(path) {
-  const { data, error } = await supabase.storage
-    .from(SUPABASE_STORAGE_BUCKET)
-    .download(path);
-
+  const { data, error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET).download(path);
   if (error) throw error;
   if (!data) throw new Error("Storage retornou vazio ao baixar o arquivo.");
-
   return data;
 }
 
 async function baixarBlobPorUrl(url, mimeType = "application/octet-stream") {
   const resp = await fetchComTimeout(url, { method: "GET" }, FETCH_TIMEOUT_MS);
-  if (!resp.ok) {
-    throw new Error(`Falha ao baixar arquivo pela URL (HTTP ${resp.status}).`);
-  }
+  if (!resp.ok) throw new Error(`Falha ao baixar arquivo pela URL (HTTP ${resp.status}).`);
 
   const blob = await resp.blob();
   if (blob && blob.size > 0) return blob;
@@ -1196,21 +1495,14 @@ async function carregarArquivoDoSupabase({ arquivoKey, idNumerico }) {
 
   let blob = null;
 
-  // 1) Storage path
   const storagePath = extrairStoragePathDoRegistro(registroRaw);
-  if (storagePath) {
-    blob = await baixarBlobDoStorage(storagePath);
-  }
+  if (storagePath) blob = await baixarBlobDoStorage(storagePath);
 
-  // 2) URL direta
   if (!blob) {
     const fileUrl = primeiroValor(registroRaw, ["url", "file_url", "arquivo_url", "public_url"]);
-    if (fileUrl) {
-      blob = await baixarBlobPorUrl(String(fileUrl), extrairMimeTypeDoRegistro(registroRaw));
-    }
+    if (fileUrl) blob = await baixarBlobPorUrl(String(fileUrl), extrairMimeTypeDoRegistro(registroRaw));
   }
 
-  // 3) base64 salvo na tabela
   if (!blob) {
     const b64 = primeiroValor(registroRaw, ["base64", "arquivoBase64", "conteudoBase64", "blobBase64"]);
     if (typeof b64 === "string" && b64.trim()) {
@@ -1218,16 +1510,13 @@ async function carregarArquivoDoSupabase({ arquivoKey, idNumerico }) {
     }
   }
 
-  // 4) blob-like salvo no próprio registro
   if (!blob) {
     const possivelBlob = primeiroValor(registroRaw, ["blob", "arquivoBlob", "file"]);
-    if (isBlobLike(possivelBlob)) {
-      blob = possivelBlob;
-    }
+    if (isBlobLike(possivelBlob)) blob = possivelBlob;
   }
 
   if (!blob) {
-    console.error("Registro do arquivo encontrado, mas sem conteúdo utilizável:", registroRaw);
+    console.error("Registro encontrado, mas sem conteúdo utilizável:", registroRaw);
     throw new Error(
       `O registro foi encontrado no Supabase, mas não localizei o conteúdo do Excel. Verifique se a tabela "${SUPABASE_ARQUIVOS_TABLE}" possui o path do arquivo no bucket "${SUPABASE_STORAGE_BUCKET}".`
     );
@@ -1248,8 +1537,7 @@ async function atualizarRegistroArquivoNoSupabaseParcial(idRegistro, patch) {
   ];
 
   for (const tentativa of tentativas) {
-    const temAlgo = tentativa && Object.keys(tentativa).length > 0;
-    if (!temAlgo) continue;
+    if (!tentativa || !Object.keys(tentativa).length) continue;
 
     const { error } = await supabase
       .from(SUPABASE_ARQUIVOS_TABLE)
@@ -1259,11 +1547,7 @@ async function atualizarRegistroArquivoNoSupabaseParcial(idRegistro, patch) {
     if (!error) return true;
 
     const msg = String(error?.message || "").toLowerCase();
-    if (
-      msg.includes("column") ||
-      msg.includes("does not exist") ||
-      msg.includes("schema cache")
-    ) {
+    if (msg.includes("column") || msg.includes("does not exist") || msg.includes("schema cache")) {
       continue;
     }
 
@@ -1275,7 +1559,7 @@ async function atualizarRegistroArquivoNoSupabaseParcial(idRegistro, patch) {
 }
 
 /* =========================
-   ARQUIVO (SUPABASE)
+   ARQUIVO
 ========================= */
 async function carregarArquivoPorKey(arquivoKey) {
   return await carregarArquivoDoSupabase({
@@ -1298,7 +1582,7 @@ async function lerExcelParaJson(blobExcel) {
 }
 
 /* =========================
-   AUTO MAP (somente Partes)
+   AUTO MAP
 ========================= */
 function aplicarAutoMapPartesPrincipais() {
   selecaoUsuarioPorParte.clear();
@@ -1356,7 +1640,7 @@ function validarDistribuicao() {
 }
 
 /* =========================
-   ENVIO (INDIVIDUAL / LOTE)
+   ENVIO
 ========================= */
 async function enviarJsonParaN8n(url, payload, headersExtra = {}) {
   const token = await getAccessTokenOrThrow();
@@ -1406,7 +1690,7 @@ async function enviarLoteParaN8n(payload, headersExtra = {}) {
 }
 
 /* =========================
-   ✅ LINK DO QUESTIONÁRIO
+   LINK DO QUESTIONÁRIO
 ========================= */
 const QUESTIONARIO_BASE_URL = "https://www.ibespebr.com.br/questionario/pesquisa/";
 
@@ -1460,7 +1744,11 @@ async function persistirOpcoesPesquisaSeVieramDaUrl() {
     if (!opUrl.valida) return;
 
     const opAtual = obterOpcoesPesquisaDoArquivo();
-    if (opAtual.valida && opAtual.numeroPesquisa === opUrl.numeroPesquisa && opAtual.dataPesquisa === opUrl.dataPesquisa) return;
+    if (
+      opAtual.valida &&
+      opAtual.numeroPesquisa === opUrl.numeroPesquisa &&
+      opAtual.dataPesquisa === opUrl.dataPesquisa
+    ) return;
 
     const atualizado = {
       ...registroArquivoAtual,
@@ -1474,9 +1762,7 @@ async function persistirOpcoesPesquisaSeVieramDaUrl() {
       opcoesPesquisa: atualizado.opcoesPesquisa,
     });
 
-    if (!ok) {
-      console.warn("Não foi possível persistir opcoesPesquisa no Supabase. Mantendo apenas em memória.");
-    }
+    if (!ok) console.warn("Não foi possível persistir opcoesPesquisa no Supabase.");
 
     registroArquivoAtual = atualizado;
   } catch (e) {
@@ -1495,7 +1781,7 @@ function montarLinkQuestionarioParaParte(itemLabelPxx) {
 }
 
 /* =========================
-   ✅ ENVIO INDIVIDUAL
+   ENVIO INDIVIDUAL
 ========================= */
 async function enviarParteIndividualParaN8n({ tipo, chave }) {
   const tipoNormalizado = tipo === "sobra" ? "sobra" : "parte";
@@ -1533,7 +1819,6 @@ async function enviarParteIndividualParaN8n({ tipo, chave }) {
     arquivoKey: arquivoKey || "",
     idArquivoOrigem: Number.isFinite(Number(idArquivoOrigem)) ? Number(idArquivoOrigem) : null,
     nomeArquivoOrigem,
-
     categoria: tipoNormalizado === "sobra" ? "SOBRA" : "PARTE",
     chaveParte: item.chaveParte,
     labelVisivel: item.labelVisivel || item.labelParte || item.chaveParte,
@@ -1559,7 +1844,7 @@ async function enviarParteIndividualParaN8n({ tipo, chave }) {
 }
 
 /* =========================
-   ✅ ENVIO EM LOTE
+   ENVIO EM LOTE
 ========================= */
 async function lancarPartes() {
   const erro = validarDistribuicao();
@@ -1599,7 +1884,6 @@ async function lancarPartes() {
   const itensPrincipaisSalvar = partesGeradas.map((p) => {
     const usuarioId = String(selecaoUsuarioPorParte.get(p.chaveParte));
     const blobParte = new Blob([p.csv || ""], { type: "text/csv;charset=utf-8" });
-
     const linkQuestionario = montarLinkQuestionarioParaParte(p.labelParte || p.chaveParte);
 
     return {
@@ -1814,18 +2098,7 @@ async function inicializar() {
     }
   } catch (e) {
     console.error(e);
-    const msg = String(e?.message || e || "");
-
-    if (
-      msg.includes("não encontrado na tabela") ||
-      msg.includes("não localizei o conteúdo do Excel") ||
-      msg.includes("storage")
-    ) {
-      mostrarAlerta(`Erro: ${msg}`);
-    } else {
-      mostrarAlerta(`Erro: ${msg}`);
-    }
-
+    mostrarAlerta(`Erro: ${String(e?.message || e || "")}`);
     if (textoDicaLancamento) textoDicaLancamento.textContent = "Erro ao carregar.";
   }
 }
@@ -1833,10 +2106,28 @@ async function inicializar() {
 /* =========================
    EVENTOS
 ========================= */
-if (botaoRecarregar) botaoRecarregar.addEventListener("click", async () => await inicializar());
-if (botaoLancarPartes) botaoLancarPartes.addEventListener("click", async () => await lancarPartes());
+botaoRecarregar?.addEventListener("click", async () => await inicializar());
 
-// ✅ Boot robusto
+botaoDownloadGeralCsv?.addEventListener("click", async () => {
+  try {
+    await baixarTodasAsPartesGeraisCsv();
+  } catch (e) {
+    console.error(e);
+    alert(`Falha no download geral CSV.\n\n${e?.message || e}`);
+  }
+});
+
+botaoDownloadGeralPdf?.addEventListener("click", async () => {
+  try {
+    await baixarTodasAsPartesGeraisPdf();
+  } catch (e) {
+    console.error(e);
+    alert(`Falha no download geral PDF.\n\n${e?.message || e}`);
+  }
+});
+
+botaoLancarPartes?.addEventListener("click", async () => await lancarPartes());
+
 function boot() {
   inicializar().catch((e) => {
     console.error("Falha no boot do admArquivo:", e);

@@ -16,7 +16,10 @@
 
   <!-- SheetJS -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" integrity="sha512-2SwdPD6INVrV/lHTZbO2nodKhrnDdJK9/kg2XD1r9uGqPo1cUbujc+IYdlYdEErWNu69gVcYgdxlmVmzTWnetw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css"
+    integrity="sha512-2SwdPD6INVrV/lHTZbO2nodKhrnDdJK9/kg2XD1r9uGqPo1cUbujc+IYdlYdEErWNu69gVcYgdxlmVmzTWnetw=="
+    crossorigin="anonymous" referrerpolicy="no-referrer" />
 
   <script defer src="../5-js/db.js"></script>
   <script defer type="module" src="../5-js/admArquivo.js"></script>
@@ -27,7 +30,7 @@
 
   <main class="admArquivoMain">
     <section class="cabecalhoAdmArquivo">
-      <h1 class="tituloPagina">ADM do Arquivo</h1>
+      <h1 class="tituloPagina">Administrar Arquivo</h1>
       <p class="subtituloPagina">
         As partes são detectadas automaticamente pela coluna <strong>Nº PESQ.</strong> (P01, P02, P03...).
         Valores como <strong>1.1</strong> entram em <strong>Sobras</strong>.
@@ -96,6 +99,10 @@
       <div class="acoesDir">
         <button class="botaoSecundario" id="botaoRecarregar" type="button">Recarregar</button>
 
+        <button class="botaoSecundario" id="botaoDownloadGeralPdf" type="button">
+          📄 Download geral PDF
+        </button>
+
         <button class="botaoPerigo" id="botaoLancarPartes" type="button" disabled>
           🚀 Lançar partes (geral)
         </button>
@@ -112,7 +119,7 @@
             <th>Parte</th>
             <th>Linhas</th>
             <th>Tamanho</th>
-            <th>Visualizar</th>
+            <th>Ações</th>
             <th>Usuário</th>
             <th>Lançar</th>
           </tr>
