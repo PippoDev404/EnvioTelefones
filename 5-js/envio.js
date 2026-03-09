@@ -5,14 +5,24 @@ await requireAuth({ redirectTo: "../7-login/login.html" });
 
 document.querySelector("#btnLogout")?.addEventListener("click", () => logout());
 
-// ===== Seletores =====
+/* =========================
+   CONFIG
+========================= */
+const SUPABASE_ARQUIVOS_TABLE = "arquivos";
+const SUPABASE_STORAGE_BUCKET = "arquivos";
+
+/* =========================
+   SELETORES
+========================= */
 const botaoSelecionar = document.querySelector("[data-botao-selecionar]");
 const inputArquivo = document.querySelector("[data-entrada]");
 const listaArquivos = document.querySelector("[data-lista]");
 const areaSoltar = document.querySelector("[data-area]");
 const formularioEnvio = document.getElementById("formularioEnvio");
 
-// ===== Modal sucesso =====
+/* =========================
+   MODAL SUCESSO
+========================= */
 const modalSucessoOverlay = document.getElementById("modalSucessoOverlay");
 const modalSucessoSegundos = document.getElementById("modalSucessoSegundos");
 const modalSucessoTexto = document.getElementById("modalSucessoTexto");
@@ -25,7 +35,9 @@ let segundosRestantes = 5;
 let modalFoiFechado = false;
 let ultimoArquivoKeyEnviado = null;
 
-// ===== Utilitários =====
+/* =========================
+   UTILITÁRIOS
+========================= */
 function formatarTamanho(bytes) {
   if (!bytes) return "0 Bytes";
   const k = 1024;
@@ -52,7 +64,37 @@ function pegarExt(nome) {
   return String(ext || "").toLowerCase();
 }
 
-// ===== Modal =====
+function gerarNomeSeguro(nome) {
+  return String(nome || "arquivo.xlsx")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w.\-]+/g, "_");
+}
+
+function tipoMimePadraoPorExt(ext) {
+  const e = String(ext || "").toLowerCase();
+
+  if (e === "xlsx") {
+    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  }
+  if (e === "xls") {
+    return "application/vnd.ms-excel";
+  }
+  if (e === "csv") {
+    return "text/csv";
+  }
+
+  return "application/octet-stream";
+}
+
+function validarArquivoPlanilha(arquivo) {
+  if (!arquivo) return false;
+  return /\.(xlsx|xls|csv)$/i.test(arquivo.name || "");
+}
+
+/* =========================
+   MODAL
+========================= */
 function abrirModalSucesso(nomeArquivo, arquivoKey) {
   if (!modalSucessoOverlay) return;
 
@@ -111,11 +153,13 @@ window.addEventListener("keydown", (e) => {
   if (modalSucessoOverlay && !modalSucessoOverlay.hidden && e.key === "Escape") fecharModalSucesso();
 });
 
-// ===== Render =====
+/* =========================
+   RENDER
+========================= */
 function renderizarArquivo(arquivo) {
   if (!arquivo) return;
 
-  if (!arquivo.name.match(/\.(xlsx|xls|csv)$/i)) {
+  if (!validarArquivoPlanilha(arquivo)) {
     inputArquivo.value = "";
     listaArquivos.innerHTML = "";
     listaArquivos.hidden = true;
@@ -145,7 +189,9 @@ function renderizarArquivo(arquivo) {
   });
 }
 
-// ===== Seleção manual =====
+/* =========================
+   SELEÇÃO MANUAL
+========================= */
 botaoSelecionar?.addEventListener("click", (e) => {
   e.preventDefault();
   inputArquivo?.click();
@@ -155,7 +201,9 @@ inputArquivo?.addEventListener("change", () => {
   renderizarArquivo(inputArquivo.files?.[0]);
 });
 
-// ===== Drag and drop =====
+/* =========================
+   DRAG AND DROP
+========================= */
 if (areaSoltar && inputArquivo) {
   areaSoltar.addEventListener("dragover", (e) => {
     e.preventDefault();
@@ -178,78 +226,181 @@ if (areaSoltar && inputArquivo) {
   });
 }
 
-// ===== Envio (IndexedDB + Supabase metadata) =====
+/* =========================
+   SUPABASE - UPLOAD
+========================= */
+async function obterUsuarioLogado() {
+  const { data, error } = await supabase.auth.getUser();
+  if (error) throw error;
+
+  const user = data?.user || null;
+  if (!user?.id) {
+    throw new Error("Usuário sem sessão ativa no Supabase.");
+  }
+
+  return user;
+}
+
+async function uploadArquivoParaBucket({ arquivo, ownerId, arquivoKey }) {
+  const ext = pegarExt(arquivo.name);
+  const nomeSeguro = gerarNomeSeguro(arquivo.name);
+  const mimeType = arquivo.type || tipoMimePadraoPorExt(ext);
+
+  const storagePath = `${ownerId}/${arquivoKey}/${nomeSeguro}`;
+
+  const { data, error } = await supabase.storage
+    .from(SUPABASE_STORAGE_BUCKET)
+    .upload(storagePath, arquivo, {
+      contentType: mimeType,
+      upsert: false,
+    });
+
+  if (error) {
+    throw new Error(`Falha ao enviar arquivo para o bucket: ${error.message}`);
+  }
+
+  return {
+    storagePath: data?.path || storagePath,
+    mimeType,
+  };
+}
+
+async function salvarMetadataArquivoNoSupabase({
+  arquivo,
+  ownerId,
+  arquivoKey,
+  storagePath,
+  mimeType,
+}) {
+  const agoraIso = new Date().toISOString();
+
+  const payload = {
+    arquivo_key: arquivoKey,
+    owner_id: ownerId,
+    nome: arquivo.name,
+    tamanho_bytes: arquivo.size,
+    mime_type: mimeType || arquivo.type || null,
+    storage_path: storagePath,
+    atualizado_em: agoraIso,
+    data_criacao: agoraIso,
+  };
+
+  const { data, error } = await supabase
+    .from(SUPABASE_ARQUIVOS_TABLE)
+    .upsert(payload, { onConflict: "arquivo_key" })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Falha ao salvar metadados no Supabase: ${error.message}`);
+  }
+
+  return data;
+}
+
+async function removerArquivoDoBucketSeExistir(storagePath) {
+  if (!storagePath) return;
+
+  try {
+    await supabase.storage
+      .from(SUPABASE_STORAGE_BUCKET)
+      .remove([storagePath]);
+  } catch (err) {
+    console.warn("Falha ao remover arquivo do bucket após erro:", err?.message || err);
+  }
+}
+
+/* =========================
+   INDEXEDDB - CACHE LOCAL
+========================= */
+async function salvarArquivoNoIndexedDb({ arquivo, arquivoKey }) {
+  if (!window.ibeDb?.salvarArquivoDb) {
+    throw new Error("db.js não carregou (window.ibeDb.salvarArquivoDb).");
+  }
+
+  const ext = pegarExt(arquivo.name);
+
+  const registro = {
+    arquivoKey,
+    idNumerico: Date.now(),
+    nome: arquivo.name,
+    tipo: ext,
+    tamanho: formatarTamanho(arquivo.size),
+    tamanhoBytes: arquivo.size,
+    data: obterDataBr(),
+    dataCriacao: Date.now(),
+    status: "Pendente",
+    blob: arquivo,
+  };
+
+  await window.ibeDb.salvarArquivoDb(registro);
+
+  return registro;
+}
+
+/* =========================
+   ENVIO
+========================= */
 formularioEnvio?.addEventListener("submit", async (e) => {
   e.preventDefault();
 
   const arquivo = inputArquivo.files?.[0];
   if (!arquivo) return;
 
-  if (!arquivo.name.match(/\.(xlsx|xls|csv)$/i)) return;
-
-  if (!window.ibeDb?.salvarArquivoDb) {
-    alert("db.js não carregou (window.ibeDb.salvarArquivoDb).");
+  if (!validarArquivoPlanilha(arquivo)) {
+    alert("Selecione um arquivo Excel ou CSV válido.");
     return;
   }
 
-  // 1) gera a key UMA VEZ (mesma para IndexedDB e Supabase)
   const arquivoKey = gerarArquivoKey();
-  const ext = pegarExt(arquivo.name);
 
-  // 2) salva no IndexedDB (local)
-  const registro = {
-    arquivoKey,
-    idNumerico: Date.now(),
-    nome: arquivo.name,
-    tipo: ext, // ✅ minúsculo: xlsx/xls/csv
-    tamanho: formatarTamanho(arquivo.size),
-    tamanhoBytes: arquivo.size,
-    data: obterDataBr(),
-    dataCriacao: Date.now(),
-    status: "Pendente",
-    blob: arquivo
-  };
+  let ownerId = null;
+  let storagePath = null;
+  let mimeType = arquivo.type || tipoMimePadraoPorExt(pegarExt(arquivo.name));
 
   try {
-    await window.ibeDb.salvarArquivoDb(registro);
+    const usuario = await obterUsuarioLogado();
+    ownerId = usuario.id;
+
+    // 1) upload do arquivo real para o bucket
+    const uploadInfo = await uploadArquivoParaBucket({
+      arquivo,
+      ownerId,
+      arquivoKey,
+    });
+
+    storagePath = uploadInfo.storagePath;
+    mimeType = uploadInfo.mimeType;
+
+    // 2) salva metadados no Supabase
+    await salvarMetadataArquivoNoSupabase({
+      arquivo,
+      ownerId,
+      arquivoKey,
+      storagePath,
+      mimeType,
+    });
+
+    // 3) opcional: mantém cache local no IndexedDB
+    await salvarArquivoNoIndexedDb({
+      arquivo,
+      arquivoKey,
+    });
+
+    // 4) limpa UI + modal
+    inputArquivo.value = "";
+    listaArquivos.innerHTML = "";
+    listaArquivos.hidden = true;
+
+    abrirModalSucesso(arquivo.name, arquivoKey);
   } catch (err) {
     console.error(err);
-    alert("Falha ao salvar no banco do navegador (IndexedDB).");
-    return;
+
+    // rollback do bucket se upload ocorreu mas metadados/cache falharam
+    if (storagePath) {
+      await removerArquivoDoBucketSeExistir(storagePath);
+    }
+
+    alert(err?.message || "Falha ao enviar arquivo.");
   }
-
-  // 3) cria/atualiza no Supabase (metadata) — NÃO quebra o envio local se der erro
-  try {
-    const { data: authData, error: authErr } = await supabase.auth.getUser();
-    if (authErr) throw authErr;
-
-    const ownerId = authData?.user?.id;
-    if (!ownerId) throw new Error("Sem ownerId no Supabase");
-
-    const { error } = await supabase
-      .from("arquivos")
-      .upsert(
-        {
-          arquivo_key: arquivoKey,
-          owner_id: ownerId,
-          nome: arquivo.name,
-          tamanho_bytes: arquivo.size,
-          mime_type: arquivo.type || null,
-          atualizado_em: new Date().toISOString(),
-          data_criacao: new Date().toISOString()
-        },
-        { onConflict: "arquivo_key" }
-      );
-
-    if (error) throw error;
-  } catch (err) {
-    console.warn("Aviso: não consegui salvar metadata no Supabase (envio local ok):", err?.message || err);
-  }
-
-  // 4) limpa UI + modal
-  inputArquivo.value = "";
-  listaArquivos.innerHTML = "";
-  listaArquivos.hidden = true;
-
-  abrirModalSucesso(arquivo.name, arquivoKey);
 });

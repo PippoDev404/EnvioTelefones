@@ -8,6 +8,7 @@
 .tituloSecao {
   font-size: 22px;
   margin-bottom: 16px;
+  color: var(--text);
 }
 
 .textoMuted {
@@ -52,6 +53,7 @@
 .tituloPrincipal {
   font-size: 38px;
   margin: 8px 0 10px;
+  color: var(--text);
 }
 
 .subtituloPrincipal {
@@ -144,18 +146,18 @@
 }
 
 .badgeOk {
-  border-color: rgba(46, 204, 113, 0.55);
-  background: rgba(46, 204, 113, 0.12);
+  border-color: color-mix(in srgb, var(--success) 55%, var(--border));
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
 }
 
 .badgeWarn {
-  border-color: rgba(241, 196, 15, 0.55);
-  background: rgba(241, 196, 15, 0.12);
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+  background: color-mix(in srgb, var(--warning) 12%, var(--surface));
 }
 
 .badgeErr {
-  border-color: rgba(231, 76, 60, 0.55);
-  background: rgba(231, 76, 60, 0.12);
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
 }
 
 .statusGrid {
@@ -176,12 +178,14 @@
   display: block;
   font-size: 18px;
   margin-top: 8px;
+  color: var(--text);
 }
 
 .statusMini {
   display: block;
   margin-top: 6px;
   font-size: 12px;
+  color: var(--text-muted);
 }
 
 /* =========================
@@ -217,7 +221,7 @@
 .iconeCard {
   font-size: 28px;
   margin-bottom: 10px;
-} 
+}
 
 /* =========================
    RESPONSIVO

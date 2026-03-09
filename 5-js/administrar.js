@@ -4,7 +4,7 @@ import { requireAuth, logout } from "../8-src/auth.js";
 import { supabase } from "../8-src/supabaseClient.js";
 
 const user = await requireAuth({ redirectTo: "../7-login/login.html" });
-if (!user) throw new Error("Sem sessão"); // segurança
+if (!user) throw new Error("Sem sessão");
 
 document.querySelector("#btnLogout")?.addEventListener("click", () => logout());
 
@@ -12,7 +12,7 @@ document.querySelector("#btnLogout")?.addEventListener("click", () => logout());
 // CONFIG / ADMIN LOCAL
 // ============================
 const chaveAdminAtual = "adminAtual";
-const adminPadrao = { id: "admin-001", nome: "Administrador", email: "admin@ibespe.com.br" };
+const adminPadrao = { id: "admin-001", email: "admin@ibespe.com.br" };
 
 // ============================
 // UTIL
@@ -24,9 +24,11 @@ function carregarJson(chave, padrao) {
     return padrao;
   }
 }
+
 function salvarJson(chave, valor) {
   localStorage.setItem(chave, JSON.stringify(valor));
 }
+
 function formatarDataBr(data = new Date()) {
   const d = String(data.getDate()).padStart(2, "0");
   const m = String(data.getMonth() + 1).padStart(2, "0");
@@ -37,18 +39,21 @@ function formatarDataBr(data = new Date()) {
 function normalizarParte(valor) {
   const v = String(valor || "").trim().toUpperCase();
   if (!v) return "";
+
   const m = v.match(/^P\s*0*(\d+)$/i) || v.match(/^P(\d+)$/i);
   if (m) {
     const n = parseInt(m[1], 10);
     if (!Number.isFinite(n) || n <= 0) return "";
     return `P${String(n).padStart(2, "0")}`;
   }
+
   const m2 = v.match(/^(\d+)(?:\.\d+)?$/);
   if (m2) {
     const n = parseInt(m2[1], 10);
     if (!Number.isFinite(n) || n <= 0) return "";
     return `P${String(n).padStart(2, "0")}`;
   }
+
   return "";
 }
 
@@ -81,7 +86,6 @@ const gerarIdUsuario = () => `usr-${Date.now()}-${Math.random().toString(16).sli
 // ============================
 // DOM (resumo)
 // ============================
-const adminNome = document.getElementById("adminNome");
 const adminEmail = document.getElementById("adminEmail");
 const qtdUsuarios = document.getElementById("qtdUsuarios");
 const qtdAtivos = document.getElementById("qtdAtivos");
@@ -126,10 +130,33 @@ function aviso(msg) {
 // ============================
 function garantirAdmin() {
   const adminAtual = carregarJson(chaveAdminAtual, null);
-  if (!adminAtual) salvarJson(chaveAdminAtual, adminPadrao);
+  const emailSessao = String(user?.email || "").trim();
+
+  if (!adminAtual) {
+    salvarJson(chaveAdminAtual, {
+      ...adminPadrao,
+      id: user?.id || "admin-001",
+      email: emailSessao || adminPadrao.email
+    });
+    return;
+  }
+
+  const atualizado = {
+    ...adminAtual,
+    id: user?.id || adminAtual.id || "admin-001",
+    email: emailSessao || adminAtual.email || adminPadrao.email
+  };
+
+  salvarJson(chaveAdminAtual, atualizado);
 }
+
 function obterAdminAtual() {
-  return carregarJson(chaveAdminAtual, adminPadrao);
+  const admin = carregarJson(chaveAdminAtual, adminPadrao);
+  return {
+    ...admin,
+    id: user?.id || admin.id || "admin-001",
+    email: String(user?.email || "").trim() || admin.email || adminPadrao.email
+  };
 }
 
 // ============================
@@ -155,9 +182,6 @@ async function excluirUsuariosIndexedDb(ids) {
 // ============================
 // SUPABASE helpers
 // ============================
-// ✅ você disse que precisa: id, owner_id, parte, telegram_user_id, telegram_username, criado_em
-// status é opcional (só funciona se existir a coluna).
-
 function mapSupabaseParaUsuario(row) {
   const tgId = String(row?.telegram_user_id || "").trim();
   const tgUser = garantirArroba(String(row?.telegram_username || "").trim());
@@ -179,7 +203,6 @@ async function listarUsuariosSupabase() {
   const ownerId = user?.id;
   if (!ownerId) return [];
 
-  // tenta com status
   {
     const { data, error } = await supabase
       .from("usuarios")
@@ -196,7 +219,6 @@ async function listarUsuariosSupabase() {
     }
   }
 
-  // fallback sem status
   const { data, error } = await supabase
     .from("usuarios")
     .select("id,parte,telegram_user_id,telegram_username,criado_em")
@@ -224,7 +246,6 @@ async function salvarUsuarioSupabase(usuario) {
     criado_em: usuario?.criadoEm ? new Date(Number(usuario.criadoEm)).toISOString() : new Date().toISOString(),
   };
 
-  // tenta com status se existir
   const payloadComStatus = {
     ...payloadBase,
     status: String(usuario?.status || "ativo"),
@@ -262,7 +283,11 @@ async function atualizarStatusUsuarioSupabase(usuarioId, novoStatus) {
   const status = String(novoStatus || "").toLowerCase();
   if (!["ativo", "bloqueado"].includes(status)) throw new Error("Status inválido.");
 
-  const { error } = await supabase.from("usuarios").update({ status }).eq("owner_id", ownerId).eq("id", String(usuarioId));
+  const { error } = await supabase
+    .from("usuarios")
+    .update({ status })
+    .eq("owner_id", ownerId)
+    .eq("id", String(usuarioId));
 
   if (!error) return true;
 
@@ -330,6 +355,7 @@ function gerarProximoP(usuarios) {
   for (let i = 1; i <= 99; i++) {
     if (!usados.has(i)) return `P${String(i).padStart(2, "0")}`;
   }
+
   return `P${String((usuarios?.length || 0) + 1).padStart(2, "0")}`;
 }
 
@@ -341,10 +367,12 @@ function abrirModalConfirmacao(texto, aoConfirmar) {
   acaoConfirmacao = typeof aoConfirmar === "function" ? aoConfirmar : null;
   if (overlayConfirmacao) overlayConfirmacao.hidden = false;
 }
+
 function fecharModalConfirmacao() {
   if (overlayConfirmacao) overlayConfirmacao.hidden = true;
   acaoConfirmacao = null;
 }
+
 botaoCancelar?.addEventListener("click", fecharModalConfirmacao);
 botaoConfirmar?.addEventListener("click", () => {
   if (acaoConfirmacao) acaoConfirmacao();
@@ -360,17 +388,20 @@ overlayConfirmacao?.addEventListener("click", (e) => {
 function pegarCheckboxesLinha() {
   return Array.from(corpoTabelaUsuarios.querySelectorAll(".checkboxLinha"));
 }
+
 function pegarCheckboxesVisiveis() {
   return Array.from(corpoTabelaUsuarios.querySelectorAll("tr"))
     .filter((tr) => tr.style.display !== "none")
     .map((tr) => tr.querySelector(".checkboxLinha"))
     .filter(Boolean);
 }
+
 function pegarIdsSelecionados() {
   return pegarCheckboxesLinha()
     .filter((cb) => cb.checked)
     .map((cb) => String(cb.dataset.usuarioId));
 }
+
 function atualizarUiSelecao() {
   const checkboxes = pegarCheckboxesLinha();
   const marcados = checkboxes.filter((c) => c.checked).length;
@@ -419,6 +450,7 @@ function aplicarFiltros() {
   if (estadoVazio) estadoVazio.hidden = visiveis !== 0;
   atualizarUiSelecao();
 }
+
 inputBusca?.addEventListener("input", aplicarFiltros);
 selectStatus?.addEventListener("change", aplicarFiltros);
 
@@ -518,10 +550,10 @@ function renderizarTabela(usuarios) {
 // Eventos da tabela
 // ============================
 let eventosTabelaOk = false;
+
 function vincularEventosTabelaUmaVez() {
   if (eventosTabelaOk) return;
 
-  // cliques (ações)
   corpoTabelaUsuarios.addEventListener("click", async (e) => {
     const botao = e.target.closest("button");
     if (!botao) return;
@@ -570,12 +602,10 @@ function vincularEventosTabelaUmaVez() {
     }
   });
 
-  // checkbox
   corpoTabelaUsuarios.addEventListener("change", (e) => {
     if (e.target.closest(".checkboxLinha")) atualizarUiSelecao();
   });
 
-  // mudança de Parte via SELECT
   corpoTabelaUsuarios.addEventListener("change", async (e) => {
     const sel = e.target.closest(".selectParte");
     if (!sel) return;
@@ -624,7 +654,6 @@ function vincularEventosTabelaUmaVez() {
     await atualizar();
   });
 
-  // edição inline: Telegram Username
   corpoTabelaUsuarios.addEventListener(
     "blur",
     async (e) => {
@@ -662,7 +691,7 @@ function vincularEventosTabelaUmaVez() {
 }
 
 // ============================
-// Ações topo (criar usuário com P automático)
+// Ações topo
 // ============================
 formVincular?.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -744,7 +773,9 @@ botaoDesvincularSelecionados?.addEventListener("click", async () => {
 // ============================
 function atualizarResumo(usuarios) {
   if (qtdUsuarios) qtdUsuarios.textContent = String(usuarios.length);
-  if (qtdAtivos) qtdAtivos.textContent = String(usuarios.filter((u) => String(u.status).toLowerCase() === "ativo").length);
+  if (qtdAtivos) qtdAtivos.textContent = String(
+    usuarios.filter((u) => String(u.status).toLowerCase() === "ativo").length
+  );
 }
 
 // ============================
@@ -752,15 +783,12 @@ function atualizarResumo(usuarios) {
 // ============================
 async function atualizar() {
   const admin = obterAdminAtual();
-  if (adminNome) adminNome.textContent = admin.nome;
-  if (adminEmail) adminEmail.textContent = admin.email;
+  if (adminEmail) adminEmail.textContent = admin.email || "sem-email";
 
-  // 1) sync local -> supabase (traz os “sumidos”)
   const r = await syncUsuariosIndexedDbParaSupabase();
   if (r?.ok) console.log(`SYNC usuários: ${r.enviados} upsert(s) para Supabase`);
   else console.warn("SYNC usuários falhou:", r);
 
-  // 2) lista supabase (fonte de verdade)
   const usuarios = await listarUsuariosSupabase();
 
   vincularEventosTabelaUmaVez();

@@ -62,21 +62,25 @@ input[type="password"]::-webkit-textfield-decoration-container {
 }
 
 .marcaSelo {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   border-radius: 12px;
-  background: #0b0b0b;
-  border: 1px solid rgba(255,255,255,.12);
+  background: var(--secondary);
+  border: 1px solid var(--border);
   display: grid;
   place-items: center;
-  box-shadow: 0 10px 20px rgba(0,0,0,.25);
+  box-shadow: 0 10px 20px color-mix(in srgb, var(--bg) 25%, transparent);
+  overflow: hidden;
 }
 
-.marcaSelo svg {
-  width: 24px;
-  height: 24px;
-  opacity: .9;
-  fill: var(--text);
+.marcaLogo {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  display: block;
+  user-select: none;
+  pointer-events: none;
+  transition: filter 0.25s ease, opacity 0.25s ease, transform 0.25s ease;
 }
 
 .marcaTitulo {

@@ -20,6 +20,19 @@
     <main class="paginaLogin">
         <section class="cartaoLogin" aria-label="Login">
 
+            <header class="cabecalhoCartao">
+                <div class="marca">
+                    <div class="marcaSelo" aria-hidden="true">
+                        <img src="/0-imgs/LOGOIBESPE.png" alt="Ibespe" class="marcaLogo">
+                    </div>
+
+                    <div>
+                        <div class="marcaTitulo">IBESPE Sistema de Envio</div>
+                        <div class="marcaSubtitulo">Plataforma interna de operação e distribuição</div>
+                    </div>
+                </div>
+            </header>
+
             <div class="corpoCartao">
                 <h1 class="tituloLogin">Entrar</h1>
 
@@ -32,8 +45,8 @@
                             <div class="iconeEntrada" aria-hidden="true">
                                 <i class="fa-regular fa-envelope"></i>
                             </div>
-                            <input id="emailAdmin" name="emailAdmin" type="email" placeholder="seuemail@dominio.com"
-                                required />
+                            <input id="emailAdmin" name="emailAdmin" type="email"
+                                placeholder="seuemail@dominio.com" required />
                         </div>
                     </div>
 
@@ -44,8 +57,8 @@
                                 <i class="fa-solid fa-lock"></i>
                             </div>
 
-                            <input id="senhaAdmin" name="senhaAdmin" type="password" placeholder="••••••••" required
-                                minlength="6" />
+                            <input id="senhaAdmin" name="senhaAdmin" type="password" placeholder="••••••••"
+                                required minlength="6" />
 
                             <button class="acaoEntrada" type="button" id="botaoAlternarSenha"
                                 aria-label="Mostrar senha">
@@ -70,7 +83,11 @@
 
             <footer class="rodapeCartao">
                 <div class="observacaoRodape">
-                    © <span id="anoAtual"></span> • Ibespe TECH
+                    © <span id="anoAtual"></span> • IBESPE TECH
+                </div>
+
+                <div class="pílulaAmbiente">
+                    Acesso restrito
                 </div>
             </footer>
 

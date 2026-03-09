@@ -3,7 +3,7 @@
    (simples, limpo, responsivo)
 ========================= */
 
-.admArquivoMain{
+.admArquivoMain {
   flex: 1;
   width: 100%;
   padding: 40px 20px;
@@ -14,13 +14,13 @@
 /* =========================
    CABEÇALHO
 ========================= */
-.cabecalhoAdmArquivo{
+.cabecalhoAdmArquivo {
   text-align: center;
   max-width: 1100px;
   margin: 0 auto 18px;
 }
 
-.tituloPagina{
+.tituloPagina {
   margin: 0;
   font-size: 26px;
   font-weight: 900;
@@ -30,27 +30,28 @@
   background-clip: text;
 }
 
-.subtituloPagina{
+.subtituloPagina {
   margin: 10px 0 0 0;
   font-size: 13px;
   color: var(--text-muted);
   line-height: 1.5;
 }
 
-.tituloSecao{
+.tituloSecao {
   margin: 0;
   font-size: 14px;
   font-weight: 900;
+  color: var(--text);
 }
 
-.textoAjuda{
+.textoAjuda {
   margin: 8px 0 0 0;
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.45;
 }
 
-.textoDica{
+.textoDica {
   margin: 10px 0 0 0;
   font-size: 12px;
   color: var(--text-muted);
@@ -59,16 +60,16 @@
 /* =========================
    ALERTA
 ========================= */
-.alertaBox{
+.alertaBox {
   max-width: 1200px;
   margin: 0 auto 12px;
   border-radius: 12px;
-  border: 1px solid var(--border);
-  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
   padding: 10px 12px;
 }
 
-.alertaTexto{
+.alertaTexto {
   margin: 0;
   font-size: 12px;
   font-weight: 800;
@@ -79,7 +80,7 @@
    CARDS
 ========================= */
 .cardInfo,
-.cardAcoes{
+.cardAcoes {
   max-width: 1200px;
   margin: 0 auto 12px;
   border-radius: 12px;
@@ -89,36 +90,36 @@
   padding: 14px;
 }
 
-.infoLinha{
+.infoLinha {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
 }
 
-.infoLinhaSecundaria{
+.infoLinhaSecundaria {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
 }
 
-.infoItem{
+.infoItem {
   flex: 1;
   min-width: 190px;
-  border: 1px solid rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgba(255,255,255,0.03);
+  background: var(--surface-2);
   padding: 10px 12px;
   text-align: center;
 }
 
-.infoLabel{
+.infoLabel {
   display: block;
   font-size: 11px;
   color: var(--text-muted);
   font-weight: 800;
 }
 
-.infoValor{
+.infoValor {
   display: block;
   margin-top: 6px;
   font-size: 12px;
@@ -130,7 +131,7 @@
 /* =========================
    AÇÕES (cardAcoes)
 ========================= */
-.cardAcoes{
+.cardAcoes {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -138,12 +139,12 @@
   flex-wrap: wrap;
 }
 
-.acoesEsq{
+.acoesEsq {
   flex: 1;
   min-width: 280px;
 }
 
-.acoesDir{
+.acoesDir {
   min-width: 260px;
   display: flex;
   flex-direction: column;
@@ -154,7 +155,7 @@
 /* =========================
    BOTÕES
 ========================= */
-.botaoSecundario{
+.botaoSecundario {
   padding: 8px 12px;
   border-radius: 10px;
   border: 1px solid var(--border);
@@ -163,41 +164,41 @@
   font-size: 12px;
   font-weight: 900;
   cursor: pointer;
-  transition: .2s;
+  transition: 0.2s;
 }
 
-.botaoSecundario:hover{
+.botaoSecundario:hover {
   background: var(--secondary-hover);
   box-shadow: var(--shadow);
 }
 
-.botaoSecundario:active{
+.botaoSecundario:active {
   transform: scale(.98);
 }
 
-.botaoPerigo{
+.botaoPerigo {
   padding: 10px 12px;
   border-radius: 12px;
-  border: 1px solid rgba(239, 68, 68, 0.55);
-  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface));
   color: var(--text);
   font-size: 12px;
   font-weight: 900;
   cursor: pointer;
-  transition: .2s;
+  transition: 0.2s;
 }
 
-.botaoPerigo:hover{
-  background: rgba(239, 68, 68, 0.22);
-  border-color: rgba(239, 68, 68, 0.75);
+.botaoPerigo:hover {
+  background: color-mix(in srgb, var(--danger) 22%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 75%, var(--border));
   box-shadow: var(--shadow);
 }
 
-.botaoPerigo:active{
+.botaoPerigo:active {
   transform: scale(.98);
 }
 
-.botaoPerigo:disabled{
+.botaoPerigo:disabled {
   opacity: .5;
   cursor: not-allowed;
   box-shadow: none;
@@ -207,7 +208,7 @@
 /* =========================
    TABELA
 ========================= */
-.containerTabela{
+.containerTabela {
   max-width: 1200px;
   margin: 0 auto;
   border-radius: 12px;
@@ -217,37 +218,38 @@
   box-shadow: var(--shadow);
 }
 
-.tabelaPartes{
+.tabelaPartes {
   width: 100%;
   border-collapse: collapse;
 }
 
-.tabelaPartes thead{
-  background: rgba(255,255,255,0.06);
+.tabelaPartes thead {
+  background: var(--surface-2);
 }
 
 .tabelaPartes th,
-.tabelaPartes td{
+.tabelaPartes td {
   border: 1px solid var(--border);
   padding: 12px 10px;
   font-size: 12px;
   text-align: center;
   vertical-align: middle;
+  color: var(--text);
 }
 
-.tabelaPartes th{
+.tabelaPartes th {
   font-weight: 900;
   color: var(--text);
 }
 
-.tabelaPartes tbody tr:hover{
-  background: rgba(255,255,255,0.04);
+.tabelaPartes tbody tr:hover {
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
 }
 
-.selectUsuario{
+.selectUsuario {
   width: 100%;
   padding: 8px 10px;
-  background: rgba(255,255,255,0.05);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 10px;
   color: var(--text);
@@ -256,12 +258,17 @@
   outline: none;
 }
 
-.selectUsuario:focus{
-  border-color: rgba(255,255,255,0.25);
-  box-shadow: 0 0 0 3px rgba(255,255,255,0.08);
+.selectUsuario option {
+  background: var(--surface);
+  color: var(--text);
 }
 
-.estadoVazio{
+.selectUsuario:focus {
+  border-color: var(--text-muted);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-muted) 18%, transparent);
+}
+
+.estadoVazio {
   padding: 22px 16px;
   text-align: center;
   color: var(--text-muted);
@@ -272,28 +279,30 @@
 /* =========================
    MODAL VISUALIZAR
 ========================= */
-.overlayModal[hidden]{ display:none !important; }
+.overlayModal[hidden] {
+  display: none !important;
+}
 
-.overlayModal{
+.overlayModal {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.70);
+  background: rgba(0, 0, 0, 0.70);
   display: grid;
   place-items: center;
   z-index: 9999;
   padding: 14px;
 }
 
-.modalVisualizar{
+.modalVisualizar {
   width: min(1100px, 100%);
   border-radius: 14px;
   border: 1px solid var(--border);
   background: var(--surface);
-  box-shadow: 0 30px 90px rgba(0,0,0,0.70);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.70);
   padding: 14px;
 }
 
-.modalTopo{
+.modalTopo {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -301,60 +310,60 @@
   flex-wrap: wrap;
 }
 
-.tituloModal{
+.tituloModal {
   margin: 0;
   font-size: 14px;
   font-weight: 900;
   color: var(--text);
 }
 
-#infoVisualizar{
+#infoVisualizar {
   margin: 10px 0 0 0;
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.4;
 }
 
-.containerTabelaModal{
+.containerTabelaModal {
   margin-top: 12px;
   border-radius: 12px;
   overflow: auto;
   border: 1px solid var(--border);
   max-height: 60vh;
-  background: rgba(255,255,255,0.02);
+  background: var(--surface-2);
 }
 
-/* tabela do modal (gerada por JS) */
-.tabelaModal{
+.tabelaModal {
   width: 100%;
   border-collapse: collapse;
-  min-width: 680px; /* evita esmagar quando tem muitas colunas */
+  min-width: 680px;
 }
 
 .tabelaModal th,
-.tabelaModal td{
+.tabelaModal td {
   border: 1px solid var(--border);
   padding: 10px 8px;
   font-size: 12px;
   text-align: center;
   vertical-align: middle;
   white-space: nowrap;
+  color: var(--text);
 }
 
-.tabelaModal thead{
-  background: rgba(255,255,255,0.06);
+.tabelaModal thead {
+  background: var(--surface-2);
 }
 
-.tabelaModal th{
+.tabelaModal th {
   font-weight: 900;
 }
 
 /* ===== Sobras ===== */
-.secaoSobras{
+.secaoSobras {
   margin-top: 18px;
 }
 
-.cabSobras{
+.cabSobras {
   max-width: 1200px;
   margin: 0 auto 10px;
   padding: 14px;
@@ -363,54 +372,53 @@
   background: var(--surface);
 }
 
-.tabelaSobras thead{
-  background: rgba(255,255,255,0.05);
+.tabelaSobras thead {
+  background: var(--surface-2);
 }
 
-/* ===== Botão lançar (placeholder) ===== */
-.botaoLancarParte{
+/* ===== Botão lançar ===== */
+.botaoLancarParte {
   padding: 8px 10px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: rgba(255,255,255,0.08);
+  background: var(--surface-2);
   color: var(--text);
   font-size: 11px;
   font-weight: 900;
   cursor: pointer;
-  transition: 0.5s;
+  transition: 0.2s;
 }
 
-.botaoLancarParte:hover{
-  background: rgba(255,255,255,0.12);
-  border-color: rgba(255,255,255,0.22);
+.botaoLancarParte:hover {
+  background: color-mix(in srgb, var(--surface-2) 85%, var(--text) 15%);
+  border-color: var(--text-muted);
   box-shadow: var(--shadow);
 }
 
-/* deixa a coluna "Lançar" mais compacta */
 .tabelaPartes th:last-child,
-.tabelaPartes td:last-child{
+.tabelaPartes td:last-child {
   width: 160px;
 }
 
 /* =========================
    RESPONSIVO
 ========================= */
-@media (max-width: 720px){
-  .admArquivoMain{
+@media (max-width: 720px) {
+  .admArquivoMain {
     padding: 28px 14px;
   }
 
-  .acoesDir{
+  .acoesDir {
     width: 100%;
     align-items: stretch;
   }
 
   .botaoSecundario,
-  .botaoPerigo{
+  .botaoPerigo {
     width: 100%;
   }
 
-  .infoItem{
+  .infoItem {
     min-width: 160px;
   }
 }

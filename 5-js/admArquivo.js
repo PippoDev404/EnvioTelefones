@@ -11,6 +11,11 @@ document.querySelector("#btnLogout")?.addEventListener("click", () => logout());
 /* =========================
    CONFIG
 ========================= */
+
+// ✅ AJUSTE AQUI SE NECESSÁRIO
+const SUPABASE_ARQUIVOS_TABLE = "arquivos";
+const SUPABASE_STORAGE_BUCKET = "arquivos";
+
 // ✅ WEBHOOK DO LOTE (Lançar partes - geral, 1 POST)
 const N8N_WEBHOOK_URL_LOTE = "https://n8n.srv962474.hstgr.cloud/webhook/envioArquivos";
 
@@ -127,6 +132,18 @@ function obterDataHoraBr() {
   return `${dia}/${mes}/${ano} ${hora}:${min}`;
 }
 
+function formatarDataBr(valor) {
+  if (!valor) return "—";
+
+  try {
+    const d = new Date(valor);
+    if (Number.isNaN(d.getTime())) return String(valor);
+    return d.toLocaleString("pt-BR");
+  } catch {
+    return String(valor);
+  }
+}
+
 function estimarTamanhoCsv(csv) {
   return new Blob([csv], { type: "text/csv;charset=utf-8" }).size;
 }
@@ -180,7 +197,14 @@ async function getAccessTokenOrThrow() {
    ✅ arquivoKey (estável)
 ========================= */
 function obterArquivoKeyAtual() {
-  const k = String(registroArquivoAtual?.arquivoKey || "").trim();
+  const k =
+    String(
+      registroArquivoAtual?.arquivoKey ||
+      registroArquivoAtual?.arquivo_key ||
+      registroArquivoAtual?.key ||
+      ""
+    ).trim();
+
   if (k) return k;
   if (arquivoKeyAtual) return String(arquivoKeyAtual);
   if (Number.isFinite(idArquivoAtual)) return `ARQ-${String(idArquivoAtual)}`;
@@ -856,7 +880,8 @@ function separarPorPartesESobras(linhasJson, colunasVisiveis) {
 
   const sobras = [];
   for (const [key, linhas] of mapaSobras.entries()) {
-    const csv = gerarCsvDaParte(linhas);
+    const linhasFiltradas = filtrarLinhasGeo(linhas, colunasVisiveis, geoKeys);
+    const csv = gerarCsvDaParte(linhasFiltradas);
     const tamanhoBytes = estimarTamanhoCsv(csv);
     const cls = metaSobras.get(key);
 
@@ -945,20 +970,318 @@ async function carregarUsuarios() {
 }
 
 /* =========================
-   ARQUIVO (IndexedDB)
+   ✅ SUPABASE - ARQUIVOS
 ========================= */
-async function carregarArquivoPorKey(arquivoKey) {
-  if (!window.ibeDb || typeof window.ibeDb.pegarArquivoPorKeyDb !== "function") {
-    throw new Error("db.js não carregou corretamente (pegarArquivoPorKeyDb).");
+function isBlobLike(valor) {
+  return (
+    valor instanceof Blob ||
+    (valor &&
+      typeof valor === "object" &&
+      typeof valor.arrayBuffer === "function")
+  );
+}
+
+function base64ParaBlob(base64, mimeType = "application/octet-stream") {
+  const clean = String(base64 || "").trim();
+  const match = clean.match(/^data:(.*?);base64,(.*)$/);
+  const realMime = match?.[1] || mimeType;
+  const realBase64 = match?.[2] || clean;
+
+  const bin = atob(realBase64);
+  const len = bin.length;
+  const bytes = new Uint8Array(len);
+
+  for (let i = 0; i < len; i++) {
+    bytes[i] = bin.charCodeAt(i);
   }
 
-  const registro = await window.ibeDb.pegarArquivoPorKeyDb(String(arquivoKey));
-  if (!registro) throw new Error("Arquivo não encontrado no IndexedDB.");
+  return new Blob([bytes], { type: realMime });
+}
 
-  const blob = registro.blob || registro.blobBase || registro.conteudoBlob || null;
-  if (!blob) throw new Error("Arquivo encontrado, mas sem blob salvo no IndexedDB.");
+function primeiroValor(obj, campos = []) {
+  for (const c of campos) {
+    if (obj?.[c] !== undefined && obj?.[c] !== null && obj?.[c] !== "") {
+      return obj[c];
+    }
+  }
+  return null;
+}
+
+function extrairArquivoKeyDoRegistro(reg) {
+  return String(
+    primeiroValor(reg, ["arquivoKey", "arquivo_key", "key"]) || ""
+  ).trim();
+}
+
+function extrairNomeArquivoDoRegistro(reg) {
+  return String(
+    primeiroValor(reg, ["nome", "name", "nome_arquivo", "filename", "file_name"]) || "arquivo"
+  ).trim();
+}
+
+function extrairStatusArquivoDoRegistro(reg) {
+  return String(
+    primeiroValor(reg, ["status", "situacao"]) || "—"
+  ).trim();
+}
+
+function extrairTamanhoBytesDoRegistro(reg) {
+  const bruto = primeiroValor(reg, ["tamanhoBytes", "tamanho_bytes", "size", "file_size", "bytes"]);
+  const n = Number(bruto);
+  return Number.isFinite(n) ? n : null;
+}
+
+function extrairDataArquivoDoRegistro(reg) {
+  return (
+    primeiroValor(reg, ["data", "created_at", "criado_em", "uploaded_at", "updated_at"]) || ""
+  );
+}
+
+function extrairColunasVisiveisDoRegistro(reg) {
+  return (
+    primeiroValor(reg, ["colunasVisiveis", "colunas_visiveis"]) || {}
+  );
+}
+
+function extrairOpcoesPesquisaDoRegistro(reg) {
+  return (
+    primeiroValor(reg, ["opcoesPesquisa", "opcoes_pesquisa"]) || {}
+  );
+}
+
+function extrairMimeTypeDoRegistro(reg) {
+  return (
+    primeiroValor(reg, ["mimeType", "mime_type", "content_type", "tipoMime"]) ||
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+}
+
+function extrairStoragePathDoRegistro(reg) {
+  return String(
+    primeiroValor(reg, [
+      "storage_path",
+      "storagePath",
+      "caminho_storage",
+      "caminhoStorage",
+      "file_path",
+      "filePath",
+      "path",
+      "caminho_arquivo",
+      "caminhoArquivo",
+    ]) || ""
+  ).trim();
+}
+
+function normalizarRegistroArquivoSupabase(reg) {
+  const tamanhoBytes = extrairTamanhoBytesDoRegistro(reg);
+
+  return {
+    ...reg,
+    id: reg?.id ?? null,
+    arquivoKey: extrairArquivoKeyDoRegistro(reg),
+    nome: extrairNomeArquivoDoRegistro(reg),
+    data: formatarDataBr(extrairDataArquivoDoRegistro(reg)),
+    tamanho: tamanhoBytes !== null ? formatarBytes(tamanhoBytes) : String(primeiroValor(reg, ["tamanho", "file_size_text"]) || "—"),
+    tamanhoBytes: tamanhoBytes ?? 0,
+    status: extrairStatusArquivoDoRegistro(reg),
+    opcoesPesquisa: extrairOpcoesPesquisaDoRegistro(reg),
+    colunasVisiveis: extrairColunasVisiveisDoRegistro(reg),
+    storagePath: extrairStoragePathDoRegistro(reg),
+    mimeType: extrairMimeTypeDoRegistro(reg),
+  };
+}
+
+async function buscarRegistroPorCampo({ campo, valor, ownerId }) {
+  try {
+    let query = supabase
+      .from(SUPABASE_ARQUIVOS_TABLE)
+      .select("*")
+      .limit(1);
+
+    if (ownerId) query = query.eq("owner_id", ownerId);
+    query = query.eq(campo, valor);
+
+    const { data, error } = await query.maybeSingle();
+
+    if (error) {
+      const msg = String(error?.message || "").toLowerCase();
+
+      // ignora se a coluna não existir
+      if (
+        msg.includes("column") ||
+        msg.includes("does not exist") ||
+        msg.includes("could not find the") ||
+        msg.includes("schema cache")
+      ) {
+        return null;
+      }
+
+      throw error;
+    }
+
+    return data || null;
+  } catch (e) {
+    const msg = String(e?.message || "").toLowerCase();
+    if (
+      msg.includes("column") ||
+      msg.includes("does not exist") ||
+      msg.includes("could not find the") ||
+      msg.includes("schema cache")
+    ) {
+      return null;
+    }
+    throw e;
+  }
+}
+
+async function buscarRegistroArquivoNoSupabase({ arquivoKey, idNumerico, ownerId }) {
+  const candidatosKey = ["arquivo_key", "arquivoKey", "key"];
+  const candidatosId = ["id"];
+
+  if (arquivoKey) {
+    for (const campo of candidatosKey) {
+      const reg = await buscarRegistroPorCampo({ campo, valor: arquivoKey, ownerId });
+      if (reg) return reg;
+    }
+  }
+
+  if (Number.isFinite(idNumerico)) {
+    for (const campo of candidatosId) {
+      const reg = await buscarRegistroPorCampo({ campo, valor: idNumerico, ownerId });
+      if (reg) return reg;
+    }
+  }
+
+  return null;
+}
+
+async function baixarBlobDoStorage(path) {
+  const { data, error } = await supabase.storage
+    .from(SUPABASE_STORAGE_BUCKET)
+    .download(path);
+
+  if (error) throw error;
+  if (!data) throw new Error("Storage retornou vazio ao baixar o arquivo.");
+
+  return data;
+}
+
+async function baixarBlobPorUrl(url, mimeType = "application/octet-stream") {
+  const resp = await fetchComTimeout(url, { method: "GET" }, FETCH_TIMEOUT_MS);
+  if (!resp.ok) {
+    throw new Error(`Falha ao baixar arquivo pela URL (HTTP ${resp.status}).`);
+  }
+
+  const blob = await resp.blob();
+  if (blob && blob.size > 0) return blob;
+
+  const ab = await resp.arrayBuffer();
+  return new Blob([ab], { type: mimeType });
+}
+
+async function carregarArquivoDoSupabase({ arquivoKey, idNumerico }) {
+  const ownerId = user?.id || null;
+
+  const registroRaw = await buscarRegistroArquivoNoSupabase({
+    arquivoKey,
+    idNumerico,
+    ownerId,
+  });
+
+  if (!registroRaw) {
+    throw new Error(`Arquivo não encontrado na tabela "${SUPABASE_ARQUIVOS_TABLE}" para a chave/id informado.`);
+  }
+
+  const registro = normalizarRegistroArquivoSupabase(registroRaw);
+
+  let blob = null;
+
+  // 1) Storage path
+  const storagePath = extrairStoragePathDoRegistro(registroRaw);
+  if (storagePath) {
+    blob = await baixarBlobDoStorage(storagePath);
+  }
+
+  // 2) URL direta
+  if (!blob) {
+    const fileUrl = primeiroValor(registroRaw, ["url", "file_url", "arquivo_url", "public_url"]);
+    if (fileUrl) {
+      blob = await baixarBlobPorUrl(String(fileUrl), extrairMimeTypeDoRegistro(registroRaw));
+    }
+  }
+
+  // 3) base64 salvo na tabela
+  if (!blob) {
+    const b64 = primeiroValor(registroRaw, ["base64", "arquivoBase64", "conteudoBase64", "blobBase64"]);
+    if (typeof b64 === "string" && b64.trim()) {
+      blob = base64ParaBlob(b64, extrairMimeTypeDoRegistro(registroRaw));
+    }
+  }
+
+  // 4) blob-like salvo no próprio registro
+  if (!blob) {
+    const possivelBlob = primeiroValor(registroRaw, ["blob", "arquivoBlob", "file"]);
+    if (isBlobLike(possivelBlob)) {
+      blob = possivelBlob;
+    }
+  }
+
+  if (!blob) {
+    console.error("Registro do arquivo encontrado, mas sem conteúdo utilizável:", registroRaw);
+    throw new Error(
+      `O registro foi encontrado no Supabase, mas não localizei o conteúdo do Excel. Verifique se a tabela "${SUPABASE_ARQUIVOS_TABLE}" possui o path do arquivo no bucket "${SUPABASE_STORAGE_BUCKET}".`
+    );
+  }
 
   return { registro, blob };
+}
+
+async function atualizarRegistroArquivoNoSupabaseParcial(idRegistro, patch) {
+  if (!Number.isFinite(Number(idRegistro))) return false;
+
+  const tentativas = [
+    patch,
+    {
+      ...(patch.opcoesPesquisa ? { opcoes_pesquisa: patch.opcoesPesquisa } : {}),
+      ...(patch.colunasVisiveis ? { colunas_visiveis: patch.colunasVisiveis } : {}),
+    },
+  ];
+
+  for (const tentativa of tentativas) {
+    const temAlgo = tentativa && Object.keys(tentativa).length > 0;
+    if (!temAlgo) continue;
+
+    const { error } = await supabase
+      .from(SUPABASE_ARQUIVOS_TABLE)
+      .update(tentativa)
+      .eq("id", Number(idRegistro));
+
+    if (!error) return true;
+
+    const msg = String(error?.message || "").toLowerCase();
+    if (
+      msg.includes("column") ||
+      msg.includes("does not exist") ||
+      msg.includes("schema cache")
+    ) {
+      continue;
+    }
+
+    console.warn("Falha ao atualizar registro do arquivo no Supabase:", error);
+    return false;
+  }
+
+  return false;
+}
+
+/* =========================
+   ARQUIVO (SUPABASE)
+========================= */
+async function carregarArquivoPorKey(arquivoKey) {
+  return await carregarArquivoDoSupabase({
+    arquivoKey: String(arquivoKey || "").trim(),
+    idNumerico: idArquivoAtual,
+  });
 }
 
 async function lerExcelParaJson(blobExcel) {
@@ -1133,8 +1456,6 @@ function obterOpcoesPesquisaPreferenciais() {
 
 async function persistirOpcoesPesquisaSeVieramDaUrl() {
   try {
-    if (!window.ibeDb || typeof window.ibeDb.salvarArquivoDb !== "function") return;
-
     const opUrl = obterOpcoesPesquisaDaUrl();
     if (!opUrl.valida) return;
 
@@ -1149,7 +1470,14 @@ async function persistirOpcoesPesquisaSeVieramDaUrl() {
       },
     };
 
-    await window.ibeDb.salvarArquivoDb(atualizado);
+    const ok = await atualizarRegistroArquivoNoSupabaseParcial(registroArquivoAtual?.id, {
+      opcoesPesquisa: atualizado.opcoesPesquisa,
+    });
+
+    if (!ok) {
+      console.warn("Não foi possível persistir opcoesPesquisa no Supabase. Mantendo apenas em memória.");
+    }
+
     registroArquivoAtual = atualizado;
   } catch (e) {
     console.warn("Falha ao persistir opcoesPesquisa no arquivo:", e);
@@ -1198,12 +1526,12 @@ async function enviarParteIndividualParaN8n({ tipo, chave }) {
   const linkQuestionario = tipoNormalizado === "parte" ? montarLinkQuestionarioParaParte(labelPxx) : "";
 
   const arquivoKey = obterArquivoKeyAtual();
-  const idArquivoOrigem = idArquivoAtual;
+  const idArquivoOrigem = idArquivoAtual ?? registroArquivoAtual?.id ?? null;
   const nomeArquivoOrigem = registroArquivoAtual?.nome || "arquivo";
 
   const body = {
     arquivoKey: arquivoKey || "",
-    idArquivoOrigem: Number.isFinite(idArquivoOrigem) ? idArquivoOrigem : null,
+    idArquivoOrigem: Number.isFinite(Number(idArquivoOrigem)) ? Number(idArquivoOrigem) : null,
     nomeArquivoOrigem,
 
     categoria: tipoNormalizado === "sobra" ? "SOBRA" : "PARTE",
@@ -1223,7 +1551,7 @@ async function enviarParteIndividualParaN8n({ tipo, chave }) {
     "x-chave-parte": String(body.chaveParte || ""),
     "x-link-questionario": linkQuestionario || "",
     "x-arquivo-key": arquivoKey || "",
-    "x-id-arquivo-origem": Number.isFinite(idArquivoOrigem) ? String(idArquivoOrigem) : "",
+    "x-id-arquivo-origem": Number.isFinite(Number(idArquivoOrigem)) ? String(idArquivoOrigem) : "",
     "x-nome-arquivo-origem": String(nomeArquivoOrigem || ""),
   };
 
@@ -1266,6 +1594,8 @@ async function lancarPartes() {
 
   if (textoDicaLancamento) textoDicaLancamento.textContent = "Lançando…";
 
+  const idOrigemFinal = idArquivoAtual ?? registroArquivoAtual?.id ?? null;
+
   const itensPrincipaisSalvar = partesGeradas.map((p) => {
     const usuarioId = String(selecaoUsuarioPorParte.get(p.chaveParte));
     const blobParte = new Blob([p.csv || ""], { type: "text/csv;charset=utf-8" });
@@ -1273,7 +1603,7 @@ async function lancarPartes() {
     const linkQuestionario = montarLinkQuestionarioParaParte(p.labelParte || p.chaveParte);
 
     return {
-      idArquivoOrigem: idArquivoAtual,
+      idArquivoOrigem: Number.isFinite(Number(idOrigemFinal)) ? Number(idOrigemFinal) : null,
       nomeArquivoOrigem: registroArquivoAtual?.nome || "arquivo",
       chaveParte: p.chaveParte,
       usuarioId,
@@ -1297,7 +1627,7 @@ async function lancarPartes() {
       const blobParte = new Blob([s.csv || ""], { type: "text/csv;charset=utf-8" });
 
       return {
-        idArquivoOrigem: idArquivoAtual,
+        idArquivoOrigem: Number.isFinite(Number(idOrigemFinal)) ? Number(idOrigemFinal) : null,
         nomeArquivoOrigem: registroArquivoAtual?.nome || "arquivo",
         chaveParte: s.chaveParte,
         usuarioId,
@@ -1373,7 +1703,7 @@ async function lancarPartes() {
     const payloadLote = {
       arquivo: {
         arquivoKey: obterArquivoKeyAtual(),
-        idArquivoOrigem: idArquivoAtual,
+        idArquivoOrigem: Number.isFinite(Number(idOrigemFinal)) ? Number(idOrigemFinal) : null,
         nomeArquivoOrigem: registroArquivoAtual?.nome || "arquivo",
         dataArquivo: registroArquivoAtual?.data || "",
         tamanhoArquivo: registroArquivoAtual?.tamanho || "",
@@ -1427,7 +1757,9 @@ async function inicializar() {
     arquivoKeyAtual = obterArquivoKeyDaUrl();
     idArquivoAtual = obterIdNumericoDaUrl();
 
-    if (!arquivoKeyAtual) throw new Error("URL sem key/id. Abra como: admArquivo.html?key=ARQ-...");
+    if (!arquivoKeyAtual && !Number.isFinite(idArquivoAtual)) {
+      throw new Error("URL sem key/id. Abra como: admArquivo.html?key=ARQ-... ou ?id=123");
+    }
 
     if (textoDicaLancamento) textoDicaLancamento.textContent = "Carregando…";
     if (botaoLancarPartes) botaoLancarPartes.disabled = true;
@@ -1435,16 +1767,17 @@ async function inicializar() {
     await carregarUsuarios();
 
     const { registro, blob } = await carregarArquivoPorKey(arquivoKeyAtual);
-    registroArquivoAtual = registro;
+    registroArquivoAtual = {
+      ...registro,
+      colunasVisiveis: {
+        estado: true,
+        cidade: true,
+        regiao: true,
+        ...(registro?.colunasVisiveis || {}),
+      },
+    };
 
     await persistirOpcoesPesquisaSeVieramDaUrl();
-
-    registroArquivoAtual.colunasVisiveis = {
-      estado: true,
-      cidade: true,
-      regiao: true,
-      ...(registroArquivoAtual.colunasVisiveis || {}),
-    };
 
     const linhasJson = await lerExcelParaJson(blob);
     const { principais, sobras } = separarPorPartesESobras(linhasJson, registroArquivoAtual.colunasVisiveis);
@@ -1481,7 +1814,18 @@ async function inicializar() {
     }
   } catch (e) {
     console.error(e);
-    mostrarAlerta(`Erro: ${e.message || e}`);
+    const msg = String(e?.message || e || "");
+
+    if (
+      msg.includes("não encontrado na tabela") ||
+      msg.includes("não localizei o conteúdo do Excel") ||
+      msg.includes("storage")
+    ) {
+      mostrarAlerta(`Erro: ${msg}`);
+    } else {
+      mostrarAlerta(`Erro: ${msg}`);
+    }
+
     if (textoDicaLancamento) textoDicaLancamento.textContent = "Erro ao carregar.";
   }
 }

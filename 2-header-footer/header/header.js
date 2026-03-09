@@ -113,11 +113,59 @@ function inicializarMenuPerfil() {
   });
 }
 
+function aplicarTema() {
+  const tema = localStorage.getItem("tema") || "claro";
+  const body = document.body;
+  const root = document.documentElement;
+
+  if (tema === "claro") {
+    body.classList.add("active");
+    root.classList.add("active");
+  } else {
+    body.classList.remove("active");
+    root.classList.remove("active");
+  }
+
+  atualizarEstadoBotaoTema();
+}
+
+function alternarTema() {
+  const temaAtual = localStorage.getItem("tema") || "claro";
+  const novoTema = temaAtual === "escuro" ? "claro" : "escuro";
+  localStorage.setItem("tema", novoTema);
+  aplicarTema();
+}
+
+function atualizarEstadoBotaoTema() {
+  const botao = document.getElementById("themeToggle");
+  if (!botao) return;
+  const tema = localStorage.getItem("tema") || "claro";
+  if (tema === "escuro") {
+    botao.classList.add("active");
+  } else {
+    botao.classList.remove("active");
+  }
+}
+
+function inicializarTema() {
+  aplicarTema();
+  atualizarEstadoBotaoTema();
+  const themeToggle = document.getElementById("themeToggle");
+  if (themeToggle) {
+    themeToggle.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      alternarTema();
+    });
+  }
+}
+
 function inicializarHeader() {
   destacarMenuAtivo();
   aplicarAvatarNoHeader();
   escutarMudancasDeAvatar();
   inicializarMenuPerfil();
+  inicializarTema();
 }
 
 window.inicializarHeader = inicializarHeader;

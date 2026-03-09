@@ -1,3 +1,5 @@
+import { aplicarTemaAtivo } from "../1-componentes/active.js";
+
 async function carregarComponente(id, caminho) {
   const resp = await fetch(caminho);
   if (!resp.ok) throw new Error(`Erro ao carregar ${caminho}: ${resp.status}`);
@@ -44,6 +46,9 @@ function atualizarAvatarHeader() {
 
 async function bootHeaderFooter() {
   try {
+    // Aplicar tema usando active.js
+    aplicarTemaAtivo();
+
     await carregarComponente("header", "/2-header-footer/header/header.html");
     await carregarComponente("footer", "/2-header-footer/footer/footer.html");
 

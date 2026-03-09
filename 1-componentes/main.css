@@ -30,8 +30,8 @@
 
 :root.active{
   --bg: #FFFFFF;
-  --surface: #F5F5F5;
-  --surface-2: #E0E0E0;
+  --surface: #ebebeb;
+  --surface-2: #d5d5d5;
   --text: #000000;
   --text-muted: #4F4F4F;
   --border: #BDBDBD;

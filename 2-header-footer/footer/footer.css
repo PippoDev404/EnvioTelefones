@@ -1,6 +1,6 @@
 .siteFooter {
-  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
+  border-top: 1px solid var(--border);
   padding: 44px 20px 18px;
   margin-top: 40px;
   width: 100%;
@@ -29,10 +29,7 @@
   font-size: 15px;
   font-weight: 650;
   margin: 0 0 6px 0;
-  background: linear-gradient(120deg, #ffffff 0%, #e2e2e2 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text);
 }
 
 .footerText {
@@ -43,20 +40,20 @@
 }
 
 .footerLink {
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--text-muted);
   text-decoration: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  border-bottom: 1px solid var(--border);
   padding-bottom: 1px;
   transition: 0.2s ease;
 }
 
 .footerLink:hover {
-  color: rgba(255, 255, 255, 0.95);
-  border-bottom-color: rgba(255, 255, 255, 0.35);
+  color: var(--text);
+  border-bottom-color: var(--text-muted);
 }
 
 .footerLink:focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.35);
+  outline: 2px solid var(--border);
   outline-offset: 3px;
   border-bottom-color: transparent;
 }
@@ -70,16 +67,16 @@
 
 .footerBadge {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.7);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  border: 1px solid var(--border);
   padding: 6px 10px;
   border-radius: 999px;
   backdrop-filter: blur(6px);
 }
 
 .footerBottom {
-  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  border-top: 1px solid var(--border);
   padding-top: 14px;
   display: flex;
   align-items: center;
@@ -91,7 +88,7 @@
 .footerYear {
   margin: 0;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-muted);
 }
 
 .footerNav {

@@ -9,7 +9,6 @@ import { supabase } from "../8-src/supabaseClient.js";
 await requireAuth({ redirectTo: "../7-login/login.html" });
 document.querySelector("#btnLogout")?.addEventListener("click", () => logout());
 
-// ownerId
 const { data: authData, error: authErr } = await supabase.auth.getUser();
 if (authErr) console.warn("supabase.auth.getUser erro:", authErr.message);
 
@@ -20,7 +19,9 @@ if (!ownerId) console.warn("Sem ownerId (sem sessão?)");
 // ============================
 // CONFIG
 // ============================
-const maxDias = 7;
+const DIAS_RETENCAO_ARQUIVOS = 7; // ← altere aqui quando quiser
+const SUPABASE_ARQUIVOS_TABLE = "arquivos";
+const SUPABASE_STORAGE_BUCKET = "arquivos";
 
 const LS_KEYS = {
   LAST_DASH_VIEW: "ibespe:lastDashboardView"
@@ -58,11 +59,14 @@ const mensagemConfirmacao = document.getElementById("mensagemConfirmacao");
 const botaoCancelarConfirmacao = document.getElementById("botaoCancelarConfirmacao");
 const botaoOkConfirmacao = document.getElementById("botaoOkConfirmacao");
 
-// Tabela (inicializa no iniciarDashboard)
+// Tabela
 let corpoTabelaArquivos = null;
 
 let acaoConfirmacao = null;
 let eventosTabelaVinculados = false;
+
+// cache em memória da listagem atual vinda do Supabase
+let arquivosAtuais = [];
 
 async function iniciarDashboard() {
   corpoTabelaArquivos = document.getElementById("corpoTabelaArquivos");
@@ -81,50 +85,176 @@ if (document.readyState === "loading") {
 }
 
 // ============================
-// HELPERS OWNER
+// HELPERS GERAIS
 // ============================
-function obterOwnerIdDoArquivo(arquivo) {
-  return String(
-    arquivo?.ownerId ??
-    arquivo?.owner_id ??
-    arquivo?.authUserId ??
-    arquivo?.userId ??
-    ""
-  ).trim();
+function bytesParaTamanho(bytes) {
+  const n = Number(bytes || 0);
+  if (!n) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(n) / Math.log(k));
+  const val = (n / Math.pow(k, i)).toFixed(i === 0 ? 0 : 1);
+  return `${val} ${sizes[i]}`;
 }
 
-function arquivoPertenceAoOwnerAtual(arquivo) {
-  return !!arquivo && !!ownerId && obterOwnerIdDoArquivo(arquivo) === String(ownerId);
+function formatarDataISO(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
 }
 
+function inferirTipo({ mime_type, storage_path, nome }) {
+  const m = String(mime_type || "").toLowerCase();
+  if (m.includes("spreadsheet") || m.includes("excel")) return "xlsx";
+  if (m.includes("csv")) return "csv";
+  const base = String(storage_path || nome || "").toLowerCase();
+  const ext = base.split(".").pop();
+  if (ext && ext.length <= 5) return ext;
+  return "arquivo";
+}
+
+function parseJsonPossivel(v, fallback) {
+  if (v == null) return fallback;
+  if (typeof v === "object") return v;
+  if (typeof v !== "string") return fallback;
+  const s = v.trim();
+  if (!s) return fallback;
+  try {
+    return JSON.parse(s);
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizarStatus(status) {
+  const s = String(status || "").toLowerCase();
+  if (s === "processado") return "Processado";
+  if (s === "pendente") return "Pendente";
+  if (s === "erro") return "Erro";
+  return "Pendente";
+}
+
+function obterArquivoKey(arquivo) {
+  return String(arquivo?.arquivoKey || arquivo?.arquivo_key || "").trim();
+}
+
+function obterDataBaseArquivo(arquivo) {
+  return (
+    arquivo?.data_criacao ||
+    arquivo?.atualizado_em ||
+    arquivo?.created_at ||
+    arquivo?.updated_at ||
+    null
+  );
+}
+
+function arquivoExpirado(arquivo, dias = DIAS_RETENCAO_ARQUIVOS) {
+  const iso = obterDataBaseArquivo(arquivo);
+  if (!iso) return false;
+
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return false;
+
+  const limiteMs = dias * 24 * 60 * 60 * 1000;
+  return (Date.now() - t) > limiteMs;
+}
+
+function mapearArquivoSupabaseParaUI(row) {
+  const arquivoKey = String(row?.arquivo_key || "").trim();
+  const dataBase = obterDataBaseArquivo(row);
+  const dataCriacaoNum = dataBase ? new Date(dataBase).getTime() : Date.now();
+
+  return {
+    ...row,
+
+    arquivoKey,
+    arquivo_key: arquivoKey,
+
+    ownerId: row?.owner_id || ownerId,
+    owner_id: row?.owner_id || ownerId,
+
+    nome: row?.nome || "Arquivo",
+    descricao: row?.descricao || "",
+
+    mimeType: row?.mime_type || null,
+    tipo: inferirTipo({
+      mime_type: row?.mime_type,
+      storage_path: row?.storage_path,
+      nome: row?.nome
+    }),
+
+    tamanhoBytes: Number(row?.tamanho_bytes || 0),
+    tamanho: bytesParaTamanho(row?.tamanho_bytes),
+
+    dataCriacao: Number.isNaN(dataCriacaoNum) ? Date.now() : dataCriacaoNum,
+    data: formatarDataISO(dataBase),
+
+    status: normalizarStatus(row?.status),
+
+    opcoesPesquisa: parseJsonPossivel(row?.opcoes_pesquisa, {}),
+    colunasVisiveis: parseJsonPossivel(row?.colunas_visiveis, { estado: true, cidade: true, regiao: true }),
+
+    storageBucket: row?.storage_bucket || SUPABASE_STORAGE_BUCKET,
+    storagePath: row?.storage_path || null,
+    arquivoUrl: row?.arquivo_url || null,
+
+    atualizadoEm: row?.atualizado_em || null,
+    hash: row?.hash || null
+  };
+}
+
+async function esperarIbeDb({ tentativas = 80, delayMs = 50 } = {}) {
+  for (let i = 0; i < tentativas; i++) {
+    if (window.ibeDb?.listarArquivosDb && window.ibeDb?.salvarArquivoDb && window.ibeDb?.pegarArquivoPorKeyDb) {
+      return true;
+    }
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return false;
+}
+
+// ============================
+// INDEXEDDB AUXILIAR
+// ============================
 async function listarArquivosDoOwnerDb() {
+  if (!window.ibeDb?.listarArquivosDb) return [];
   const lista = await window.ibeDb.listarArquivosDb();
   return (lista || [])
-    .filter(arquivoPertenceAoOwnerAtual)
+    .filter((arquivo) => String(arquivo?.ownerId || arquivo?.owner_id || "") === String(ownerId || ""))
     .sort((a, b) => (b.dataCriacao || 0) - (a.dataCriacao || 0));
 }
 
 async function pegarArquivoAtualPorKey(arquivoKey) {
-  const arquivo = await window.ibeDb.pegarArquivoPorKeyDb(String(arquivoKey || ""));
-  if (!arquivoPertenceAoOwnerAtual(arquivo)) return null;
-  return arquivo;
-}
+  const key = String(arquivoKey || "").trim();
+  if (!key) return null;
 
-async function excluirArquivosAntigosDoOwnerDb(maxDiasParam) {
-  const agora = Date.now();
-  const maxMs = maxDiasParam * 24 * 60 * 60 * 1000;
+  const emMemoria = arquivosAtuais.find((a) => obterArquivoKey(a) === key);
+  if (emMemoria) return emMemoria;
 
-  const lista = await listarArquivosDoOwnerDb();
-  const keysParaExcluir = lista
-    .filter((a) => a.dataCriacao && (agora - a.dataCriacao) > maxMs)
-    .map((a) => a.arquivoKey)
-    .filter(Boolean);
-
-  if (keysParaExcluir.length) {
-    await window.ibeDb.excluirArquivosPorKeyDb(keysParaExcluir);
+  if (window.ibeDb?.pegarArquivoPorKeyDb) {
+    const arquivoLocal = await window.ibeDb.pegarArquivoPorKeyDb(key);
+    if (arquivoLocal) return arquivoLocal;
   }
 
-  return keysParaExcluir.length;
+  return null;
+}
+
+async function salvarArquivoLocalCache(arquivo) {
+  if (!window.ibeDb?.salvarArquivoDb) return;
+  await window.ibeDb.salvarArquivoDb(arquivo);
+}
+
+async function excluirArquivosLocaisPorKeys(keys) {
+  const chaves = (keys || []).map((k) => String(k || "").trim()).filter(Boolean);
+  if (!chaves.length) return;
+  if (!window.ibeDb?.excluirArquivosPorKeyDb) return;
+  await window.ibeDb.excluirArquivosPorKeyDb(chaves);
 }
 
 // ============================
@@ -247,7 +377,7 @@ togglesColunas.forEach((el) => {
 });
 
 function abrirModalOpcoes(arquivo) {
-  arquivoKeyEmEdicao = String(arquivo?.arquivoKey || arquivo?.arquivo_key || "");
+  arquivoKeyEmEdicao = obterArquivoKey(arquivo);
 
   const op = arquivo?.opcoesPesquisa || {};
   estadoOpcoesTemp = {
@@ -256,7 +386,11 @@ function abrirModalOpcoes(arquivo) {
   };
 
   const col = garantirColunasVisiveis(arquivo);
-  estadoColunasTemp = { estado: !!col.estado, cidade: !!col.cidade, regiao: !!col.regiao };
+  estadoColunasTemp = {
+    estado: !!col.estado,
+    cidade: !!col.cidade,
+    regiao: !!col.regiao
+  };
 
   if (inputNumeroPesquisa) inputNumeroPesquisa.value = estadoOpcoesTemp.numeroPesquisa;
   if (inputDataPesquisa) inputDataPesquisa.value = estadoOpcoesTemp.dataPesquisa;
@@ -303,13 +437,36 @@ botaoSalvarOpcoes?.addEventListener("click", async () => {
   const arquivo = await pegarArquivoAtualPorKey(arquivoKeyEmEdicao);
   if (!arquivo) return;
 
-  const atualizado = {
+  const patch = {
+    opcoes_pesquisa: {
+      numeroPesquisa: numero,
+      dataPesquisa: data
+    },
+    colunas_visiveis: {
+      ...estadoColunasTemp
+    },
+    atualizado_em: new Date().toISOString()
+  };
+
+  const { error } = await supabase
+    .from(SUPABASE_ARQUIVOS_TABLE)
+    .update(patch)
+    .eq("owner_id", ownerId)
+    .eq("arquivo_key", arquivoKeyEmEdicao);
+
+  if (error) {
+    console.error(error);
+    alert(`Falha ao salvar opções no Supabase: ${error.message}`);
+    return;
+  }
+
+  const atualizadoLocal = {
     ...arquivo,
     opcoesPesquisa: { numeroPesquisa: numero, dataPesquisa: data },
     colunasVisiveis: { ...estadoColunasTemp }
   };
 
-  await window.ibeDb.salvarArquivoDb(atualizado);
+  await salvarArquivoLocalCache(atualizadoLocal);
   fecharModalOpcoes();
   await atualizar();
 });
@@ -339,14 +496,6 @@ function classeBolinhaStatus(status) {
   if (s === "pendente") return "bolinhaTabela laranja";
   if (s === "erro") return "bolinhaTabela vermelha";
   return "bolinhaTabela laranja";
-}
-
-function normalizarStatus(status) {
-  const s = String(status || "").toLowerCase();
-  if (s === "processado") return "Processado";
-  if (s === "pendente") return "Pendente";
-  if (s === "erro") return "Erro";
-  return "Pendente";
 }
 
 // ============================
@@ -421,33 +570,56 @@ inputBusca?.addEventListener("input", aplicarFiltros);
 selectStatus?.addEventListener("change", aplicarFiltros);
 
 // ============================
-// EXCLUIR (INDEXEDDB + SUPABASE)
+// SUPABASE - LISTAR / EXCLUIR
 // ============================
-async function excluirNoSupabasePorKeys(keysParaExcluir) {
-  const keys = (keysParaExcluir || []).map((k) => String(k || "").trim()).filter(Boolean);
-  if (!keys.length) return true;
-  if (!ownerId) {
-    console.warn("Sem ownerId: não dá pra excluir no Supabase.");
-    return false;
-  }
+async function listarArquivosDoOwnerNoSupabase() {
+  if (!ownerId) return [];
 
-  const { error } = await supabase
-    .from("arquivos")
-    .delete()
+  const { data, error } = await supabase
+    .from(SUPABASE_ARQUIVOS_TABLE)
+    .select("*")
     .eq("owner_id", ownerId)
-    .in("arquivo_key", keys);
+    .order("data_criacao", { ascending: false });
 
   if (error) {
-    console.warn("Erro ao excluir no Supabase:", error.message);
+    console.error("Erro ao buscar arquivos no Supabase:", error.message);
+    return [];
+  }
+
+  return (data || []).map(mapearArquivoSupabaseParaUI);
+}
+
+async function excluirArquivosDoBucket(paths) {
+  const lista = (paths || []).map((p) => String(p || "").trim()).filter(Boolean);
+  if (!lista.length) return true;
+
+  const { error } = await supabase.storage
+    .from(SUPABASE_STORAGE_BUCKET)
+    .remove(lista);
+
+  if (error) {
+    console.warn("Erro ao excluir no bucket:", error.message);
     return false;
   }
+
   return true;
 }
 
-async function excluirNoIndexedDbPorKeys(keysParaExcluir) {
-  const keys = (keysParaExcluir || []).map((k) => String(k || "").trim()).filter(Boolean);
-  if (!keys.length) return true;
-  await window.ibeDb.excluirArquivosPorKeyDb(keys);
+async function excluirRegistrosDaTabelaPorKeys(keys) {
+  const lista = (keys || []).map((k) => String(k || "").trim()).filter(Boolean);
+  if (!lista.length) return true;
+
+  const { error } = await supabase
+    .from(SUPABASE_ARQUIVOS_TABLE)
+    .delete()
+    .eq("owner_id", ownerId)
+    .in("arquivo_key", lista);
+
+  if (error) {
+    console.warn("Erro ao excluir registros da tabela:", error.message);
+    return false;
+  }
+
   return true;
 }
 
@@ -455,12 +627,43 @@ async function excluirPorKeys(keysParaExcluir) {
   const keys = (keysParaExcluir || []).map((k) => String(k || "").trim()).filter(Boolean);
   if (!keys.length) return;
 
-  const okSupabase = await excluirNoSupabasePorKeys(keys);
-  await excluirNoIndexedDbPorKeys(keys);
+  const arquivosParaExcluir = arquivosAtuais.filter((a) => keys.includes(obterArquivoKey(a)));
+  const storagePaths = arquivosParaExcluir.map((a) => a.storagePath).filter(Boolean);
 
-  if (!okSupabase) {
-    alert("Arquivos removidos localmente, mas houve erro ao excluir no Supabase. Veja o console.");
+  // primeiro tenta apagar do bucket
+  const okBucket = await excluirArquivosDoBucket(storagePaths);
+
+  // depois apaga da tabela
+  const okTabela = await excluirRegistrosDaTabelaPorKeys(keys);
+
+  // sempre remove local também
+  await excluirArquivosLocaisPorKeys(keys);
+
+  if (!okBucket || !okTabela) {
+    alert("Houve falha parcial ao excluir no Supabase/Storage. Veja o console.");
   }
+}
+
+async function excluirArquivosExpirados() {
+  const lista = await listarArquivosDoOwnerNoSupabase();
+  const expirados = lista.filter((a) => arquivoExpirado(a, DIAS_RETENCAO_ARQUIVOS));
+
+  if (!expirados.length) return 0;
+
+  const keys = expirados.map((a) => obterArquivoKey(a)).filter(Boolean);
+  const paths = expirados.map((a) => a.storagePath).filter(Boolean);
+
+  console.log(`Excluindo ${expirados.length} arquivo(s) expirado(s) com mais de ${DIAS_RETENCAO_ARQUIVOS} dia(s).`);
+
+  const okBucket = await excluirArquivosDoBucket(paths);
+  const okTabela = await excluirRegistrosDaTabelaPorKeys(keys);
+  await excluirArquivosLocaisPorKeys(keys);
+
+  if (!okBucket || !okTabela) {
+    console.warn("Falha parcial ao excluir arquivos expirados.");
+  }
+
+  return expirados.length;
 }
 
 async function excluirArquivoUnico(arquivoKey) {
@@ -522,7 +725,7 @@ function renderizarTabela(arquivos) {
 
   for (const arquivoBruto of arquivos) {
     const arquivo = { ...arquivoBruto, status: normalizarStatus(arquivoBruto.status) };
-    const arquivoKey = String(arquivo.arquivoKey || arquivo.arquivo_key || "");
+    const arquivoKey = obterArquivoKey(arquivo);
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -569,8 +772,22 @@ async function marcarComoProcessadoSePendente(arquivoKey) {
   const statusAtual = normalizarStatus(arquivo.status);
   if (statusAtual.toLowerCase() !== "pendente") return arquivo;
 
+  const { error } = await supabase
+    .from(SUPABASE_ARQUIVOS_TABLE)
+    .update({
+      status: "Processado",
+      atualizado_em: new Date().toISOString()
+    })
+    .eq("owner_id", ownerId)
+    .eq("arquivo_key", arquivoKey);
+
+  if (error) {
+    console.warn("Falha ao atualizar status para Processado:", error.message);
+    return arquivo;
+  }
+
   const atualizado = { ...arquivo, status: "Processado" };
-  await window.ibeDb.salvarArquivoDb(atualizado);
+  await salvarArquivoLocalCache(atualizado);
   return atualizado;
 }
 
@@ -649,149 +866,39 @@ function aoAlterarTabela(e) {
 // ============================
 // SYNC SUPABASE -> INDEXEDDB
 // ============================
-function bytesParaTamanho(bytes) {
-  const n = Number(bytes || 0);
-  if (!n) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(n) / Math.log(k));
-  const val = (n / Math.pow(k, i)).toFixed(i === 0 ? 0 : 1);
-  return `${val} ${sizes[i]}`;
-}
-
-function formatarDataISO(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "";
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
-}
-
-function inferirTipo({ mime_type, storage_path, nome }) {
-  const m = String(mime_type || "").toLowerCase();
-  if (m.includes("spreadsheet") || m.includes("excel")) return "xlsx";
-  if (m.includes("csv")) return "csv";
-  const base = String(storage_path || nome || "").toLowerCase();
-  const ext = base.split(".").pop();
-  if (ext && ext.length <= 5) return ext;
-  return "arquivo";
-}
-
-function parseJsonPossivel(v, fallback) {
-  if (v == null) return fallback;
-  if (typeof v === "object") return v;
-  if (typeof v !== "string") return fallback;
-  const s = v.trim();
-  if (!s) return fallback;
-  try {
-    return JSON.parse(s);
-  } catch {
-    return fallback;
-  }
-}
-
-async function esperarIbeDb({ tentativas = 80, delayMs = 50 } = {}) {
-  for (let i = 0; i < tentativas; i++) {
-    if (window.ibeDb?.listarArquivosDb && window.ibeDb?.salvarArquivoDb && window.ibeDb?.pegarArquivoPorKeyDb) return true;
-    await new Promise((r) => setTimeout(r, delayMs));
-  }
-  return false;
-}
-
-async function syncArquivosSupabaseParaIndexedDb() {
-  if (!ownerId) return;
-
+async function syncArquivosSupabaseParaIndexedDb(listaSupabase) {
   const ok = await esperarIbeDb();
   if (!ok) {
     console.warn("window.ibeDb não ficou pronto a tempo.");
     return;
   }
 
-  const { data: arquivos, error } = await supabase
-    .from("arquivos")
-    .select("*")
-    .eq("owner_id", ownerId)
-    .order("data_criacao", { ascending: false });
-
-  if (error) {
-    console.warn("Erro ao buscar arquivos no Supabase:", error.message);
-    return;
-  }
-
-  console.log("SUPABASE arquivos do owner:", arquivos);
-
   const fetchedKeys = new Set();
 
-  if (Array.isArray(arquivos)) {
-    for (const row of arquivos) {
-      const arquivoKey = String(row?.arquivo_key || "").trim();
-      if (!arquivoKey) continue;
+  for (const arquivo of listaSupabase || []) {
+    const key = obterArquivoKey(arquivo);
+    if (!key) continue;
 
-      fetchedKeys.add(arquivoKey);
+    fetchedKeys.add(key);
 
-      const existente = await window.ibeDb.pegarArquivoPorKeyDb(arquivoKey);
+    const existente = await window.ibeDb.pegarArquivoPorKeyDb(key);
 
-      const dataCriacaoIso = row?.data_criacao || row?.atualizado_em || null;
-      const dataCriacaoNum = dataCriacaoIso ? new Date(dataCriacaoIso).getTime() : Date.now();
-
-      const mapped = {
-        arquivoKey,
-        arquivo_key: arquivoKey,
-
-        ownerId: row?.owner_id || ownerId,
-        owner_id: row?.owner_id || ownerId,
-        idx: row?.idx ?? null,
-
-        nome: row?.nome || "Arquivo",
-        descricao: row?.descricao || "",
-
-        mimeType: row?.mime_type || null,
-        tipo: inferirTipo({
-          mime_type: row?.mime_type,
-          storage_path: row?.storage_path,
-          nome: row?.nome
-        }),
-
-        tamanhoBytes: Number(row?.tamanho_bytes || 0),
-        tamanho: bytesParaTamanho(row?.tamanho_bytes),
-
-        dataCriacao: isNaN(dataCriacaoNum) ? Date.now() : dataCriacaoNum,
-        data: formatarDataISO(dataCriacaoIso),
-
-        status: existente?.status || "Pendente",
-
-        colunasVisiveis: parseJsonPossivel(row?.colunas_visiveis, { estado: true, cidade: true, regiao: true }),
-
-        storageBucket: row?.storage_bucket || null,
-        storagePath: row?.storage_path || null,
-        arquivoUrl: row?.arquivo_url || null,
-
-        atualizadoEm: row?.atualizado_em || null,
-        hash: row?.hash || null
-      };
-
-      await window.ibeDb.salvarArquivoDb({
-        ...(existente || {}),
-        ...mapped,
-        opcoesPesquisa: existente?.opcoesPesquisa || mapped?.opcoesPesquisa || undefined
-      });
-    }
+    await window.ibeDb.salvarArquivoDb({
+      ...(existente || {}),
+      ...arquivo,
+      opcoesPesquisa: arquivo.opcoesPesquisa || existente?.opcoesPesquisa || {},
+      colunasVisiveis: arquivo.colunasVisiveis || existente?.colunasVisiveis || { estado: true, cidade: true, regiao: true }
+    });
   }
 
-  // remove do IndexedDB local apenas os arquivos do owner atual
-  // que não existem mais no Supabase
   const locaisDoOwner = await listarArquivosDoOwnerDb();
   const staleKeys = locaisDoOwner
-    .filter((a) => !fetchedKeys.has(String(a.arquivoKey || a.arquivo_key || "")))
-    .map((a) => String(a.arquivoKey || a.arquivo_key || ""))
+    .filter((a) => !fetchedKeys.has(obterArquivoKey(a)))
+    .map((a) => obterArquivoKey(a))
     .filter(Boolean);
 
   if (staleKeys.length) {
-    await window.ibeDb.excluirArquivosPorKeyDb(staleKeys);
+    await excluirArquivosLocaisPorKeys(staleKeys);
   }
 }
 
@@ -806,12 +913,18 @@ async function atualizar() {
     return;
   }
 
-  await syncArquivosSupabaseParaIndexedDb();
-  await excluirArquivosAntigosDoOwnerDb(maxDias);
+  // 1) exclui vencidos no banco + bucket + local
+  await excluirArquivosExpirados();
 
-  const arquivos = await listarArquivosDoOwnerDb();
+  // 2) busca novamente do banco e usa o banco como fonte principal
+  const listaSupabase = await listarArquivosDoOwnerNoSupabase();
+  arquivosAtuais = [...listaSupabase];
 
+  // 3) sincroniza cache local
+  await syncArquivosSupabaseParaIndexedDb(listaSupabase);
+
+  // 4) renderiza usando a lista do banco
   vincularEventosTabelaUmaVez();
-  renderizarTabela(arquivos);
+  renderizarTabela(listaSupabase);
   aplicarFiltros();
 }

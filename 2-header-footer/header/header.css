@@ -1,8 +1,8 @@
 header {
-  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
+  border-bottom: 1px solid var(--border);
   padding: 20px 0;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--bg) 55%, transparent);
 }
 
 #header {
@@ -35,6 +35,12 @@ header {
   width: 175px;
   height: 100px;
   object-fit: contain;
+  transition: filter 0.3s ease, opacity 0.3s ease;
+}
+
+/* tema claro: escurece a logo branca */
+:root.active .logoImg {
+  filter: brightness(0.08) contrast(1.15);
 }
 
 /* Menu */
@@ -71,13 +77,12 @@ header {
 
 .navLink:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
 }
 
-/* ACTIVE (FUNCIONA AGORA) */
 .navLink.active {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--surface-2) 92%, var(--text) 8%);
 }
 
 /* Avatar */
@@ -86,10 +91,14 @@ header {
   height: 45px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--bg) 40%, transparent);
   display: inline-block;
   transition: box-shadow 0.18s ease, transform 0.12s ease;
+}
+
+:root.active .profileAvatar {
+  filter: brightness(0.35) contrast(1.15);
 }
 
 .profileToggle {
@@ -106,7 +115,9 @@ header {
 .profileToggle:hover .profileAvatar,
 .profileAvatar:hover {
   transform: translateY(-1px);
-  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.04), 0 12px 30px rgba(0, 0, 0, 0.65);
+  box-shadow:
+    0 0 0 6px color-mix(in srgb, var(--surface-2) 65%, transparent),
+    0 12px 30px color-mix(in srgb, var(--bg) 55%, transparent);
 }
 
 /* Dropdown */
@@ -115,14 +126,14 @@ header {
   right: 0;
   top: calc(100% + 8px);
 
-  background: linear-gradient(180deg, #1f1f1f, #151515);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  border: 1px solid var(--border);
   border-radius: 10px;
 
-  min-width: 200px;
+  min-width: 220px;
   padding: 10px;
 
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 8px 30px color-mix(in srgb, var(--bg) 60%, transparent);
   z-index: 400;
 
   display: none;
@@ -149,16 +160,111 @@ header {
   padding: 8px 10px;
   border-radius: 6px;
   font-size: 13px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
 }
 
 .profileItem:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--surface-2) 78%, transparent);
 }
 
+/* Theme Toggle Button Styles - Slider */
+.theme-toggle-btn {
+  position: relative;
+  width: 65px;
+  height: 24px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--bg) 28%, transparent);
+}
+
+.theme-toggle-btn:hover {
+  background: color-mix(in srgb, var(--surface-2) 90%, var(--text) 10%);
+  border-color: var(--text-muted);
+}
+
+.theme-toggle-btn.active {
+  background: color-mix(in srgb, var(--success) 75%, var(--surface));
+  border-color: color-mix(in srgb, var(--success) 90%, var(--border));
+}
+
+.theme-toggle-btn .fas {
+  font-size: 12px;
+  color: var(--text-muted);
+  z-index: 1;
+  transition: color 0.3s ease;
+}
+
+.theme-toggle-btn.active .fas.fa-sun {
+  color: color-mix(in srgb, var(--text) 30%, transparent);
+}
+
+.theme-toggle-btn.active .fas.fa-moon {
+  color: #ffffff;
+}
+
+.slider-knob {
+  position: relative;
+  left: -20px;
+  width: 20px;
+  height: 20px;
+  background: var(--text);
+  border-radius: 50%;
+  transition: transform 0.3s ease, background 0.3s ease;
+  box-shadow: 0 2px 4px color-mix(in srgb, var(--bg) 25%, transparent);
+  z-index: 2;
+}
+
+.theme-toggle-btn.active .slider-knob {
+  transform: translateX(40px);
+}
+
+/* Dividers */
 .profileDivider {
   border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  border-top: 1px solid var(--border);
   margin: 6px 0;
+}
+
+.profileMenu hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 6px 0;
+}
+
+/* Theme Option */
+.theme-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px;
+  border-radius: 10px;
+}
+
+.theme-option:hover {
+  background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+}
+
+.theme-option > span {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+#themeLabel {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
 }
 
 @media (max-width: 768px) {
@@ -166,5 +272,19 @@ header {
     right: 12px;
     left: auto;
     top: calc(100% + 8px);
+  }
+
+  .menuLista {
+    gap: 10px;
+  }
+
+  .navLink {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+
+  .logoImg {
+    width: 150px;
+    height: 86px;
   }
 }
