@@ -1,34 +1,14 @@
 import { requireAuth, logout } from "../8-src/auth.js";
 import { supabase } from "../8-src/supabaseClient.js";
 
+const TABELA = "entregas_consolidado";
+
 const user = await requireAuth({ redirectTo: "../7-login/login.html" });
 if (!user) throw new Error("Sem sessão");
 
-// exemplo de botão logout:
 document.querySelector("#btnLogout")?.addEventListener("click", () => logout());
 
-const API_LISTA = "https://n8n.srv962474.hstgr.cloud/webhook/lista";
-const API_EXCLUIR = "https://n8n.srv962474.hstgr.cloud/webhook/excluir/lista";
-const pollingMs = 10000;
 const ownerId = String(user?.id || "").trim();
-
-// ======================
-// AUTH TOKEN
-// ======================
-async function getAccessTokenOrThrow() {
-  const { data, error } = await supabase.auth.getSession();
-
-  if (error) {
-    throw new Error(error.message || "Não foi possível obter a sessão.");
-  }
-
-  const token = data?.session?.access_token;
-  if (!token) {
-    throw new Error("Usuário sem sessão ativa.");
-  }
-
-  return token;
-}
 
 // ======================
 // DOM
@@ -70,42 +50,45 @@ const txtExcluirNome = document.getElementById("txtExcluirNome");
 // ======================
 // STATE
 // ======================
-let arquivosAtuais = [];          // [{arquivoKey, nome, atualizadoEm, csv, raw, ownerId}]
+let arquivosAtuais = [];          // [{ arquivoKey, nome, atualizadoEm, csv, raw, ownerId }]
 let arquivoSelecionadoKey = null; // arquivoKey
 let partesDoArquivo = [];         // [{key, nome, csv}]
-let timer = null;
+let isLoading = false;
+let realtimeChannel = null;
 
 // estado exclusão
-let excluirPendente = null; // { arquivoKey, nome, id? }
+let excluirPendente = null; // { arquivoKey, nome, ownerId }
 
 init();
 
-function init() {
+async function init() {
   bind();
-  carregarTudo(true);
-  iniciarAuto();
+  await carregarTudo(true);
+  iniciarRealtime();
 }
 
 function bind() {
   inputBusca?.addEventListener("input", aplicarFiltros);
+
   selectOrdenacao?.addEventListener("change", () => {
     renderTabelaArquivos(arquivosAtuais);
     aplicarFiltros();
   });
 
   btnFecharVer?.addEventListener("click", () => fecharDialog(modalVer));
+
   btnFecharPartes?.addEventListener("click", () => {
     limparPreviewParte();
     fecharDialog(modalPartes);
   });
 
-  btnVerParte?.addEventListener("click", async () => {
+  btnVerParte?.addEventListener("click", () => {
     const key = selectParte?.value;
     if (!arquivoSelecionadoKey || !key) return;
     verParteLocal(arquivoSelecionadoKey, key);
   });
 
-  btnDownloadParte?.addEventListener("click", async () => {
+  btnDownloadParte?.addEventListener("click", () => {
     const key = selectParte?.value;
     if (!arquivoSelecionadoKey || !key) return;
 
@@ -130,108 +113,114 @@ function bind() {
       limparPreviewParte();
       fecharDialog(modalPartes);
     }
+
     if (modalVer?.open) fecharDialog(modalVer);
   });
 
   modalExcluir?.addEventListener("click", (e) => {
     const r = modalExcluir.getBoundingClientRect();
-    const clicouFora = e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+    const clicouFora =
+      e.clientX < r.left ||
+      e.clientX > r.right ||
+      e.clientY < r.top ||
+      e.clientY > r.bottom;
+
     if (clicouFora) fecharModalExcluir();
+  });
+
+  window.addEventListener("beforeunload", () => {
+    encerrarRealtime();
   });
 }
 
-function iniciarAuto() {
-  timer = setInterval(() => carregarTudo(false), pollingMs);
-}
-
 // ======================
-// HELPERS OWNER
+// FETCH SUPABASE (GET)
 // ======================
-function inferirOwnerId(row) {
-  return String(
-    row?.owner_id ??
-    row?.ownerId ??
-    row?.authUserId ??
-    row?.auth_user_id ??
-    row?.user_id ??
-    row?.userId ??
-    row?.usuario_id ??
-    ""
-  ).trim();
-}
+async function carregarTudo(mostrarPrimeiraVez = false) {
+  if (isLoading) return;
+  isLoading = true;
 
-function filtrarListaDoOwner(lista) {
-  const arr = Array.isArray(lista) ? lista : [];
-  const temOwnerNoPayload = arr.some((x) => String(x?.ownerId || "").trim());
-
-  // se o workflow já devolve owner no payload, filtra localmente também
-  if (temOwnerNoPayload) {
-    return arr.filter((x) => String(x.ownerId || "").trim() === ownerId);
-  }
-
-  // se não veio owner no payload, assume que o n8n já filtrou pelo token
-  return arr;
-}
-
-// ======================
-// FETCH N8N (GET)
-// ======================
-async function carregarTudo(mostrarPrimeiraVez) {
   try {
-    const token = await getAccessTokenOrThrow();
+    const { data, error } = await supabase
+      .from(TABELA)
+      .select("arquivo_key, csv, atualizado_em, nome_arquivo_origem, owner_id")
+      .eq("owner_id", ownerId)
+      .order("atualizado_em", { ascending: false });
 
-    const url = `${API_LISTA}?_ts=${Date.now()}`;
-    const resp = await fetch(url, {
-      method: "GET",
-      cache: "no-store",
-      headers: {
-        "Accept": "application/json",
-        "Authorization": `Bearer ${token}`,
-        "x-owner-id": ownerId
-      },
-    });
+    if (error) throw error;
 
-    const raw = await resp.text();
-    if (!resp.ok) throw new Error(`HTTP ${resp.status} - ${raw.slice(0, 300)}`);
+    const linhas = Array.isArray(data) ? data : [];
 
-    let data;
-    try { data = JSON.parse(raw); } catch { data = raw; }
-
-    const linhas = unwrapParaArray(data);
-    if (!Array.isArray(linhas)) throw new Error("Resposta inválida: n8n não retornou array (nem objeto).");
-
-    const novaListaBruta = linhas
+    const novaLista = linhas
       .map((r) => ({
-        arquivoKey: r.arquivoKey ?? r.arquivo_key ?? r.key ?? r.id ?? "",
-        nome: r.nome ?? r.nome_arquivo_origem ?? r.fileName ?? "—",
-        atualizadoEm: r.atualizadoEm ?? r.atualizado_em ?? r.updatedAt ?? null,
+        arquivoKey: String(r.arquivo_key ?? "").trim(),
+        nome: String(r.nome_arquivo_origem ?? "—").trim(),
+        atualizadoEm: r.atualizado_em ?? null,
         csv: garantirTexto(r.csv ?? ""),
-        ownerId: inferirOwnerId(r),
+        ownerId: String(r.owner_id ?? "").trim(),
         raw: r,
       }))
       .filter((x) => x.arquivoKey);
 
-    const novaLista = filtrarListaDoOwner(novaListaBruta);
-
     const mudou = hashLista(arquivosAtuais) !== hashLista(novaLista);
+
     if (mostrarPrimeiraVez || mudou) {
       arquivosAtuais = novaLista;
-      renderTabelaArquivos(novaLista);
+      renderTabelaArquivos(arquivosAtuais);
       aplicarFiltros();
-      if (txtTotal) txtTotal.textContent = String(novaLista.length);
+
+      if (txtTotal) txtTotal.textContent = String(arquivosAtuais.length);
     }
   } catch (e) {
-    console.error(e);
+    console.error("Erro ao carregar arquivos:", e);
+
+    if (mostrarPrimeiraVez) {
+      arquivosAtuais = [];
+      renderTabelaArquivos(arquivosAtuais);
+      aplicarFiltros();
+
+      if (txtTotal) txtTotal.textContent = "0";
+    }
+  } finally {
+    isLoading = false;
   }
 }
 
-function unwrapParaArray(data) {
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.data)) return data.data;
-  if (Array.isArray(data?.items)) return data.items;
-  if (Array.isArray(data?.result)) return data.result;
-  if (data && typeof data === "object") return [data];
-  return null;
+// ======================
+// REALTIME
+// ======================
+function iniciarRealtime() {
+  encerrarRealtime();
+
+  realtimeChannel = supabase
+    .channel(`watch-${TABELA}-${ownerId}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: TABELA,
+      },
+      async (payload) => {
+        const row = payload?.new || payload?.old || {};
+        const rowOwnerId = String(row.owner_id ?? "").trim();
+
+        // Evita recarregar por alterações de outros usuários
+        if (rowOwnerId && rowOwnerId !== ownerId) return;
+
+        await carregarTudo(false);
+      }
+    )
+    .subscribe((status) => {
+      console.log("[Realtime]", status);
+    });
+}
+
+function encerrarRealtime() {
+  if (realtimeChannel) {
+    supabase.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
 }
 
 // ======================
@@ -247,7 +236,9 @@ function renderTabelaArquivos(lista) {
     const db = new Date(b.atualizadoEm || 0).getTime();
 
     if (ordenacao === "asc") return da - db;
-    if (ordenacao === "nome") return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR");
+    if (ordenacao === "nome") {
+      return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR");
+    }
     return db - da;
   });
 
@@ -257,6 +248,7 @@ function renderTabelaArquivos(lista) {
     if (estadoVazio) estadoVazio.hidden = false;
     return;
   }
+
   if (estadoVazio) estadoVazio.hidden = true;
 
   for (const a of ordenada) {
@@ -325,23 +317,23 @@ function aplicarFiltros() {
 }
 
 // ======================
-// EXCLUIR (N8N)
+// EXCLUIR (SUPABASE)
 // ======================
 function abrirModalExcluir(arquivoKey) {
-  const arq = arquivosAtuais.find(x => String(x.arquivoKey) === String(arquivoKey));
+  const arq = arquivosAtuais.find((x) => String(x.arquivoKey) === String(arquivoKey));
   if (!arq) return;
 
   excluirPendente = {
     arquivoKey: String(arq.arquivoKey),
     nome: String(arq.nome || ""),
-    id: String(arq.raw?.id ?? arq.raw?.key ?? arq.raw?.arquivo_key ?? arq.arquivoKey),
-    ownerId
+    ownerId: String(arq.ownerId || ownerId),
   };
 
   if (txtExcluirNome) {
     const nomeExib = (arq.nome || `arquivo-${arq.arquivoKey}`).trim();
     txtExcluirNome.textContent = `Arquivo: ${nomeExib} (key: ${arq.arquivoKey})`;
   }
+
   if (modalExcluirSub) {
     modalExcluirSub.textContent = "Tem certeza que deseja excluir este arquivo do sistema?";
   }
@@ -358,49 +350,43 @@ async function confirmarExclusao() {
   if (!excluirPendente) return;
 
   const payload = { ...excluirPendente };
+
   removerDaListaLocal(payload.arquivoKey);
   fecharModalExcluir();
 
   try {
-    const token = await getAccessTokenOrThrow();
+    const { error } = await supabase
+      .from(TABELA)
+      .delete()
+      .eq("arquivo_key", payload.arquivoKey)
+      .eq("owner_id", ownerId);
 
-    const resp = await fetch(API_EXCLUIR, {
-      method: "POST",
-      headers: {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
-        "x-owner-id": ownerId
-      },
-      body: JSON.stringify(payload)
-    });
-
-    const raw = await resp.text();
-    if (!resp.ok) {
+    if (error) {
       await carregarTudo(true);
-      throw new Error(`HTTP ${resp.status} - ${raw.slice(0, 300)}`);
+      throw error;
     }
 
     await carregarTudo(true);
   } catch (e) {
     console.error("Falha ao excluir:", e);
+    await carregarTudo(true);
   }
 }
 
 function removerDaListaLocal(arquivoKey) {
-  arquivosAtuais = arquivosAtuais.filter(x => String(x.arquivoKey) !== String(arquivoKey));
+  arquivosAtuais = arquivosAtuais.filter((x) => String(x.arquivoKey) !== String(arquivoKey));
   renderTabelaArquivos(arquivosAtuais);
   aplicarFiltros();
-  if (txtTotal) txtTotal.textContent = String(arquivosAtuais.length);
+
+  if (txtTotal) {
+    txtTotal.textContent = String(arquivosAtuais.length);
+  }
 }
 
-// ======================
-// VER / DOWNLOAD (LOCAL)
-// ======================
 function verArquivoLocal(arquivoKey) {
   limparPreviewMaster();
 
-  const arq = arquivosAtuais.find(x => String(x.arquivoKey) === String(arquivoKey));
+  const arq = arquivosAtuais.find((x) => String(x.arquivoKey) === String(arquivoKey));
   if (!arq) return;
 
   if (modalVerTitulo) modalVerTitulo.textContent = `Ver: ${arq.nome || arq.arquivoKey}`;
@@ -413,38 +399,38 @@ function verArquivoLocal(arquivoKey) {
 }
 
 function baixarArquivoLocal(arquivoKey) {
-  const arq = arquivosAtuais.find(x => String(x.arquivoKey) === String(arquivoKey));
-  if (!arq) return;
-
-  if (!window.XLSX) return;
+  const arq = arquivosAtuais.find((x) => String(x.arquivoKey) === String(arquivoKey));
+  if (!arq || !window.XLSX) return;
 
   const base = (arq.nome || `arquivo-${arq.arquivoKey}`).trim()
     .replace(/\.csv$/i, "")
     .replace(/\.xlsx$/i, "");
 
-  const filename = `${base}.xlsx`;
-  salvarXlsxComoArquivoCsv(arq.csv || "", filename);
+  salvarXlsxComoArquivoCsv(arq.csv || "", `${base}.xlsx`);
 }
 
-// ======================
-// PARTES (LOCAL)
-// ======================
 function abrirPartesLocal(arquivoKey) {
   arquivoSelecionadoKey = arquivoKey;
   partesDoArquivo = [];
+
   if (selectParte) selectParte.innerHTML = "";
   if (nomeDownloadParte) nomeDownloadParte.value = "";
+
   limparPreviewParte();
 
-  const arq = arquivosAtuais.find(x => String(x.arquivoKey) === String(arquivoKey));
+  const arq = arquivosAtuais.find((x) => String(x.arquivoKey) === String(arquivoKey));
   if (!arq) return;
 
-  if (modalPartesTitulo) modalPartesTitulo.textContent = `Partes: ${arq.nome || arq.arquivoKey}`;
+  if (modalPartesTitulo) {
+    modalPartesTitulo.textContent = `Partes: ${arq.nome || arq.arquivoKey}`;
+  }
 
   const partes = gerarPartesDoCsv(arq.csv || "", "Nº PESQ.");
 
   if (!partes.length) {
-    if (selectParte) selectParte.innerHTML = `<option value="">(sem partes detectadas)</option>`;
+    if (selectParte) {
+      selectParte.innerHTML = `<option value="">(sem partes detectadas)</option>`;
+    }
     abrirDialog(modalPartes);
     return;
   }
@@ -452,18 +438,18 @@ function abrirPartesLocal(arquivoKey) {
   partesDoArquivo = partes;
 
   if (selectParte) {
-    selectParte.innerHTML = partes.map((p) =>
-      `<option value="${escapeHtml(String(p.key))}">${escapeHtml(String(p.nome))}</option>`
-    ).join("");
+    selectParte.innerHTML = partes
+      .map((p) => `<option value="${escapeHtml(String(p.key))}">${escapeHtml(String(p.nome))}</option>`)
+      .join("");
   }
 
   abrirDialog(modalPartes);
 }
 
-function verParteLocal(arquivoKey, parteKey) {
+function verParteLocal(_arquivoKey, parteKey) {
   limparPreviewParte();
 
-  const parte = partesDoArquivo.find(p => String(p.key) === String(parteKey));
+  const parte = partesDoArquivo.find((p) => String(p.key) === String(parteKey));
   if (!parte) return;
 
   const { headers, rows } = csvPreview(parte.csv || "", 20);
@@ -471,27 +457,21 @@ function verParteLocal(arquivoKey, parteKey) {
 }
 
 function baixarParteLocal(arquivoKey, parteKey, forcedName = null) {
-  const arq = arquivosAtuais.find(x => String(x.arquivoKey) === String(arquivoKey));
-  const parte = partesDoArquivo.find(p => String(p.key) === String(parteKey));
-  if (!arq || !parte) return;
+  const arq = arquivosAtuais.find((x) => String(x.arquivoKey) === String(arquivoKey));
+  const parte = partesDoArquivo.find((p) => String(p.key) === String(parteKey));
 
-  if (!window.XLSX) return;
+  if (!arq || !parte || !window.XLSX) return;
 
   const base = (arq.nome || `arquivo-${arq.arquivoKey}`)
     .replace(/\.csv$/i, "")
     .replace(/\.xlsx$/i, "");
 
-  const suggested = `${base}-${parte.key}.xlsx`;
-
-  let filename = forcedName || suggested;
+  let filename = forcedName || `${base}-${parte.key}.xlsx`;
   filename = filename.toLowerCase().endsWith(".xlsx") ? filename : `${filename}.xlsx`;
 
   salvarXlsxComoArquivoCsv(parte.csv || "", filename);
 }
 
-// ======================
-// CSV HELPERS
-// ======================
 function garantirTexto(txt) {
   return String(txt || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
@@ -501,17 +481,14 @@ function estimarBytes(txt) {
 }
 
 function csvPreview(csvText, limitLinhas = 20) {
-  const linhas = String(csvText || "")
-    .split("\n")
-    .filter(l => l.trim().length > 0);
-
+  const linhas = String(csvText || "").split("\n").filter((l) => l.trim().length > 0);
   if (!linhas.length) return { headers: [], rows: [] };
 
   const headers = parseCsvLine(linhas[0]);
   const dados = linhas.slice(1, 1 + limitLinhas).map(parseCsvLine);
 
   const colCount = headers.length;
-  const rows = dados.map(r => {
+  const rows = dados.map((r) => {
     const rr = [...r];
     while (rr.length < colCount) rr.push("");
     if (rr.length > colCount) rr.length = colCount;
@@ -551,7 +528,7 @@ function parseCsvLine(line) {
   }
 
   out.push(cur);
-  return out.map(v => limparCampoCsv(v));
+  return out.map(limparCampoCsv);
 }
 
 function limparCampoCsv(v) {
@@ -562,23 +539,20 @@ function limparCampoCsv(v) {
     .trim();
 }
 
-// ======================
-// PARTES (por CSV vírgula)
-// ======================
 function gerarPartesDoCsv(csvText, nomeColunaParte = "Nº PESQ.") {
-  const linhas = String(csvText || "")
-    .split("\n")
-    .filter(l => l.trim().length > 0);
-
+  const linhas = String(csvText || "").split("\n").filter((l) => l.trim().length > 0);
   if (linhas.length < 2) return [];
 
   const headerLine = linhas[0];
   const headers = parseCsvLine(headerLine);
 
-  const idxParte = headers.findIndex(h => normalizarTexto(h) === normalizarTexto(nomeColunaParte));
+  const idxParte = headers.findIndex(
+    (h) => normalizarTexto(h) === normalizarTexto(nomeColunaParte)
+  );
   if (idxParte < 0) return [];
 
   const mapa = new Map();
+
   for (let i = 1; i < linhas.length; i++) {
     const cols = parseCsvLine(linhas[i]);
     const parteRaw = String(cols[idxParte] ?? "").trim().toUpperCase();
@@ -597,7 +571,7 @@ function gerarPartesDoCsv(csvText, nomeColunaParte = "Nº PESQ.") {
       key,
       nome: key,
       csv: [headerLine, ...lines].join("\n"),
-      totalLinhas: lines.length
+      totalLinhas: lines.length,
     }));
 }
 
@@ -627,9 +601,6 @@ function normalizarTexto(txt) {
     .toLowerCase();
 }
 
-// ======================
-// DOWNLOAD XLSX (SheetJS)
-// ======================
 function salvarXlsxComoArquivoCsv(csvText, filenameXlsx) {
   if (!window.XLSX) return;
 
@@ -637,12 +608,12 @@ function salvarXlsxComoArquivoCsv(csvText, filenameXlsx) {
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .split("\n")
-    .filter(l => l.trim().length > 0);
+    .filter((l) => l.trim().length > 0);
 
   const aoa = linhas.map(parseCsvLine);
-
   const maxCols = aoa.reduce((m, r) => Math.max(m, (r || []).length), 0);
-  const aoaNorm = aoa.map(r => {
+
+  const aoaNorm = aoa.map((r) => {
     const rr = [...(r || [])];
     while (rr.length < maxCols) rr.push("");
     return rr;
@@ -658,9 +629,6 @@ function salvarXlsxComoArquivoCsv(csvText, filenameXlsx) {
   XLSX.writeFile(wb, nome);
 }
 
-// ======================
-// UI HELPERS
-// ======================
 function renderTabela(elHead, elBody, headers, rows) {
   if (!elHead || !elBody) return;
 
@@ -727,15 +695,23 @@ function escapeHtml(str) {
 
 function formatarBytes(bytes) {
   if (bytes == null || isNaN(Number(bytes))) return null;
+
   const b = Number(bytes);
   const units = ["B", "KB", "MB", "GB"];
-  let u = 0, v = b;
-  while (v >= 1024 && u < units.length - 1) { v /= 1024; u++; }
+  let u = 0;
+  let v = b;
+
+  while (v >= 1024 && u < units.length - 1) {
+    v /= 1024;
+    u++;
+  }
+
   return `${v.toFixed(u === 0 ? 0 : 2)} ${units[u]}`;
 }
 
 function formatarData(iso) {
   if (!iso) return null;
+
   try {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return String(iso);
@@ -748,7 +724,10 @@ function formatarData(iso) {
 function hashLista(lista) {
   if (!Array.isArray(lista)) return "";
   return lista
-    .map((x) => `${x.arquivoKey ?? ""}|${x.atualizadoEm ?? ""}|${(x.nome ?? "")}|${(x.csv ?? "").length}|${x.ownerId ?? ""}`)
+    .map(
+      (x) =>
+        `${x.arquivoKey ?? ""}|${x.atualizadoEm ?? ""}|${x.nome ?? ""}|${(x.csv ?? "").length}|${x.ownerId ?? ""}`
+    )
     .sort()
     .join("||");
 }

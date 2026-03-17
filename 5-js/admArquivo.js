@@ -12,12 +12,13 @@ document.querySelector("#btnLogout")?.addEventListener("click", () => logout());
 ========================= */
 const SUPABASE_ARQUIVOS_TABLE = "arquivos";
 const SUPABASE_STORAGE_BUCKET = "arquivos";
+const SUPABASE_ENTREGAS_CONSOLIDADO_TABLE = "entregas_consolidado";
 
 const N8N_WEBHOOK_URL_LOTE = "https://n8n.srv962474.hstgr.cloud/webhook/envioArquivos";
 const N8N_WEBHOOK_URL_INDIVIDUAL = "https://n8n.srv962474.hstgr.cloud/webhook/envioArquivos";
 const N8N_WEBHOOK_URL_EXCLUIR = "https://n8n.srv962474.hstgr.cloud/webhook/excluir";
 
-const FETCH_TIMEOUT_MS = 30000;
+const FETCH_TIMEOUT_MS = 100000;
 const nomeColunaParte = "Nº PESQ.";
 const maxLinhasPreview = 80;
 
@@ -46,6 +47,7 @@ const estadoVazioSobras = document.getElementById("estadoVazioSobras");
 const botaoRecarregar = document.getElementById("botaoRecarregar");
 const botaoDownloadGeralCsv = document.getElementById("botaoDownloadGeralCsv");
 const botaoDownloadGeralPdf = document.getElementById("botaoDownloadGeralPdf");
+const botaoExcluirMensagensTelegram = document.getElementById("botaoExcluirMensagensTelegram");
 const botaoLancarPartes = document.getElementById("botaoLancarPartes");
 const textoDicaLancamento = document.getElementById("textoDicaLancamento");
 
@@ -167,6 +169,10 @@ function obterAdminAtualLocal() {
   }
 }
 
+function obterOwnerIdAtual() {
+  return String(user?.id || "").trim();
+}
+
 async function getAccessTokenOrThrow() {
   const { data, error } = await supabase.auth.getSession();
 
@@ -225,7 +231,7 @@ function baixarCsvItem(item) {
 }
 
 /* =========================
-   CSV -> MATRIZ (SEPARA COLUNAS CERTO)
+   CSV -> MATRIZ
 ========================= */
 function csvParaMatriz(csv) {
   if (!window.XLSX) return [];
@@ -246,6 +252,22 @@ function csvParaMatriz(csv) {
     });
   } catch (e) {
     console.warn("Falha ao converter CSV para matriz:", e);
+    return [];
+  }
+}
+
+function csvTextoParaJson(csv) {
+  if (!window.XLSX) return [];
+  try {
+    const wb = window.XLSX.read(csv || "", {
+      type: "string",
+      raw: false,
+      codepage: 65001
+    });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    return window.XLSX.utils.sheet_to_json(ws, { defval: "" }) || [];
+  } catch (e) {
+    console.warn("Falha ao converter CSV para JSON:", e);
     return [];
   }
 }
@@ -451,7 +473,6 @@ async function baixarTodasAsPartesGeraisCsv() {
     const parte = partesGeradas[i];
     const nome = nomeArquivoDaParte(parte, "csv");
     baixarCsvDireto(nome, parte.csv || "");
-
     await new Promise((resolve) => setTimeout(resolve, 800));
   }
 }
@@ -512,16 +533,37 @@ async function fetchComTimeout(url, options = {}, timeoutMs = 30000) {
 }
 
 /* =========================
-   EXCLUIR (ANTES DE ENVIAR)
+   EXCLUIR TELEGRAM (ESPECÍFICO)
 ========================= */
-async function excluirUltimasMensagensAntesDeEnviar(contexto = "") {
+async function excluirMensagensTelegramEspecificas({
+  contexto = "",
+  ownerId = "",
+  usuarioId = "",
+  telegramId = "",
+  chaveParte = "",
+  categoria = "",
+  arquivoKey = "",
+  idArquivoOrigem = null,
+  nomeArquivoOrigem = "",
+  modo = "ESPECIFICO",
+} = {}) {
   const token = await getAccessTokenOrThrow();
 
   const payload = {
-    contexto: String(contexto || "").slice(0, 120),
-    idArquivoOrigem: idArquivoAtual ?? null,
-    nomeArquivoOrigem: registroArquivoAtual?.nome || "",
-    arquivoKey: obterArquivoKeyAtual(),
+    modo,
+    contexto: String(contexto || "").slice(0, 200),
+
+    ownerId: String(ownerId || obterOwnerIdAtual() || ""),
+    usuarioId: String(usuarioId || "").trim(),
+    telegramId: String(telegramId || "").trim(),
+
+    chaveParte: String(chaveParte || "").trim(),
+    categoria: String(categoria || "").trim(),
+
+    arquivoKey: String(arquivoKey || obterArquivoKeyAtual() || "").trim(),
+    idArquivoOrigem: Number.isFinite(Number(idArquivoOrigem)) ? Number(idArquivoOrigem) : null,
+    nomeArquivoOrigem: String(nomeArquivoOrigem || registroArquivoAtual?.nome || "").trim(),
+
     executadoEm: new Date().toISOString(),
   };
 
@@ -533,6 +575,15 @@ async function excluirUltimasMensagensAntesDeEnviar(contexto = "") {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`,
         "x-payload-tipo": "EXCLUIR",
+        "x-owner-id": payload.ownerId,
+        "x-usuario-id": payload.usuarioId || "",
+        "x-telegram-id": payload.telegramId || "",
+        "x-chave-parte": payload.chaveParte || "",
+        "x-categoria": payload.categoria || "",
+        "x-arquivo-key": payload.arquivoKey || "",
+        "x-id-arquivo-origem": payload.idArquivoOrigem ? String(payload.idArquivoOrigem) : "",
+        "x-nome-arquivo-origem": payload.nomeArquivoOrigem || "",
+        "x-modo-exclusao": payload.modo || "ESPECIFICO",
       },
       body: JSON.stringify(payload),
     },
@@ -541,10 +592,34 @@ async function excluirUltimasMensagensAntesDeEnviar(contexto = "") {
 
   if (!resp.ok) {
     const txt = await resp.text().catch(() => "");
-    throw new Error(`Falha ao excluir últimas mensagens (HTTP ${resp.status}): ${txt || "sem resposta"}`);
+    throw new Error(`Falha ao excluir mensagens do Telegram (HTTP ${resp.status}): ${txt || "sem resposta"}`);
   }
 
   return await resp.json().catch(() => ({}));
+}
+
+async function excluirMensagensDoArquivoInteiro() {
+  const ownerId = obterOwnerIdAtual();
+  const arquivoKey = obterArquivoKeyAtual();
+  const idArquivoOrigem = idArquivoAtual ?? registroArquivoAtual?.id ?? null;
+  const nomeArquivoOrigem = registroArquivoAtual?.nome || "";
+
+  if (!ownerId) {
+    throw new Error("OwnerId não encontrado.");
+  }
+
+  if (!arquivoKey && !Number.isFinite(Number(idArquivoOrigem))) {
+    throw new Error("Não encontrei arquivoKey nem idArquivoOrigem para excluir.");
+  }
+
+  return await excluirMensagensTelegramEspecificas({
+    modo: "ARQUIVO_INTEIRO",
+    contexto: "EXCLUIR MENSAGENS DO ARQUIVO INTEIRO",
+    ownerId,
+    arquivoKey,
+    idArquivoOrigem,
+    nomeArquivoOrigem,
+  });
 }
 
 /* =========================
@@ -559,6 +634,7 @@ function obterTelegramDoUsuario(u) {
     u?.telegramid ??
     u?.tgId ??
     u?.tgID ??
+    u?.telegram_user_id ??
     "";
 
   const rawUser =
@@ -825,9 +901,37 @@ function criarBotaoLancar({ texto, tipo, chave }) {
     try {
       btn.disabled = true;
       const oldText = btn.textContent;
-      btn.textContent = "Excluindo últimas mensagens…";
 
-      await excluirUltimasMensagensAntesDeEnviar(`INDIVIDUAL ${texto}`);
+      const item = getItemPorChave({ tipo, chave });
+      if (!item) throw new Error("Item não encontrado para lançar.");
+
+      const usuarioId =
+        tipo === "sobra"
+          ? (selecaoUsuarioPorSobra.get(chave) || "")
+          : (selecaoUsuarioPorParte.get(chave) || "");
+
+      if (!usuarioId) throw new Error("Selecione um usuário antes de lançar.");
+
+      const usuario = getUsuarioPorId(usuarioId);
+      if (!usuario) throw new Error("Usuário selecionado não encontrado.");
+
+      const { telegramId } = obterTelegramDoUsuario(usuario);
+      if (!telegramId) throw new Error("Usuário sem telegramId.");
+
+      btn.textContent = "Excluindo mensagens…";
+
+      await excluirMensagensTelegramEspecificas({
+        modo: "ESPECIFICO",
+        contexto: `INDIVIDUAL ${texto}`,
+        ownerId: obterOwnerIdAtual(),
+        usuarioId: String(usuario.id || ""),
+        telegramId: String(telegramId || ""),
+        chaveParte: String(item.chaveParte || ""),
+        categoria: tipo === "sobra" ? "SOBRA" : "PARTE",
+        arquivoKey: obterArquivoKeyAtual(),
+        idArquivoOrigem: idArquivoAtual ?? registroArquivoAtual?.id ?? null,
+        nomeArquivoOrigem: registroArquivoAtual?.nome || "",
+      });
 
       btn.textContent = "Enviando…";
 
@@ -1149,21 +1253,160 @@ function listaGeoAtiva(colunasVisiveis) {
 }
 
 /* =========================
-   EXCEL -> PARTES / SOBRAS
+   NORMALIZAÇÃO DAS COLUNAS OPERACIONAIS
 ========================= */
-function gerarCsvDaParte(linhas) {
-  const ws = window.XLSX.utils.json_to_sheet(linhas);
-  const csv = window.XLSX.utils.sheet_to_csv(ws);
-  return csv || "";
+function normalizarNomeColunaControle(chave) {
+  return String(chave || "")
+    .replace(/^\uFEFF/, "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase()
+    .replace(/[.\-\/\\]/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
+function familiaColunaOperacional(chave) {
+  const n = normalizarNomeColunaControle(chave).replace(/_\d+$/, "");
+
+  if (n === "STATUS") return "STATUS";
+  if (n === "OBSERVACAO") return "OBSERVACAO";
+
+  const compacto = n.replace(/_/g, "");
+  if (compacto === "DTALTERACAO") return "DT.ALTERACAO";
+  if (compacto === "ULTIMAALTERACAO") return "DT.ALTERACAO";
+
+  return null;
+}
+
+function valorPreenchido(v) {
+  return String(v ?? "").trim() !== "";
+}
+
+function statusCanonico(v) {
+  const s = String(v ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+
+  if (!s) return "";
+  if (s === "SEM_RESPOSTA") return "RETORNO";
+  if (s === "LIGAR_MAIS_TARDE") return "RETORNO";
+  if (s.startsWith("RETORNO")) return "RETORNO";
+
+  return s;
+}
+
+function escCsv(v) {
+  const s = String(v ?? "");
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function obterCabecalhoBaseSemOperacionais(linhas) {
+  const ordem = [];
+  const vistos = new Set();
+
+  for (const linha of linhas || []) {
+    for (const chave of Object.keys(linha || {})) {
+      const fam = familiaColunaOperacional(chave);
+      if (fam) continue;
+
+      const nome = String(chave);
+      if (!vistos.has(nome)) {
+        vistos.add(nome);
+        ordem.push(nome);
+      }
+    }
+  }
+
+  return ordem;
+}
+
+function consolidarLinhaOperacional(linha) {
+  const out = {};
+  const pool = {
+    STATUS: [],
+    OBSERVACAO: [],
+    "DT.ALTERACAO": [],
+  };
+
+  for (const [k, v] of Object.entries(linha || {})) {
+    const fam = familiaColunaOperacional(k);
+
+    if (fam) {
+      pool[fam].push(v ?? "");
+      continue;
+    }
+
+    out[k] = v ?? "";
+  }
+
+  let statusValor = "";
+  for (const v of pool.STATUS) {
+    const s = statusCanonico(v);
+    if (valorPreenchido(s)) statusValor = s;
+  }
+
+  let obsValor = "";
+  for (const v of pool.OBSERVACAO) {
+    if (valorPreenchido(v)) obsValor = String(v ?? "");
+  }
+
+  let dtValor = "";
+  for (const v of pool["DT.ALTERACAO"]) {
+    if (valorPreenchido(v)) dtValor = String(v ?? "");
+  }
+
+  out["STATUS"] = statusValor || "PENDENTE";
+  out["OBSERVACAO"] = obsValor || "";
+  out["DT.ALTERACAO"] = dtValor || "";
+
+  return out;
+}
+
+function consolidarColunasOperacionais(linhas) {
+  return (linhas || []).map((linha) => consolidarLinhaOperacional(linha));
+}
+
+function gerarCsvDaParte(linhas) {
+  const linhasNorm = consolidarColunasOperacionais(linhas || []);
+  if (!linhasNorm.length) return "";
+
+  const cabecalhoBase = obterCabecalhoBaseSemOperacionais(linhasNorm);
+  const cabecalhoFinal = [
+    ...cabecalhoBase,
+    "STATUS",
+    "OBSERVACAO",
+    "DT.ALTERACAO",
+  ];
+
+  const linhasCsv = [];
+  linhasCsv.push(cabecalhoFinal.map(escCsv).join(","));
+
+  for (const linha of linhasNorm) {
+    const row = cabecalhoFinal.map((col) => escCsv(linha?.[col] ?? ""));
+    linhasCsv.push(row.join(","));
+  }
+
+  return linhasCsv.join("\n");
+}
+
+/* =========================
+   EXCEL -> PARTES / SOBRAS
+========================= */
 function separarPorPartesESobras(linhasJson, colunasVisiveis) {
   if (!Array.isArray(linhasJson) || linhasJson.length === 0) return { principais: [], sobras: [] };
 
-  const geoKeys = detectarChavesGeo(linhasJson[0]);
-  const chaveColuna = encontrarChaveColunaPrimeiraLinha(linhasJson[0]);
+  const linhasConsolidadasOperacionais = consolidarColunasOperacionais(linhasJson);
+  const geoKeys = detectarChavesGeo(linhasConsolidadasOperacionais[0]);
+  const chaveColuna = encontrarChaveColunaPrimeiraLinha(linhasConsolidadasOperacionais[0]);
+
   if (!chaveColuna) {
-    throw new Error(`Não encontrei a coluna "${nomeColunaParte}". Verifique o nome no Excel.`);
+    throw new Error(`Não encontrei a coluna "${nomeColunaParte}". Verifique o nome no Excel/consolidado.`);
   }
 
   const mapaPrincipais = new Map();
@@ -1172,7 +1415,7 @@ function separarPorPartesESobras(linhasJson, colunasVisiveis) {
   const metaPrincipais = new Map();
   const metaSobras = new Map();
 
-  for (const linha of linhasJson) {
+  for (const linha of linhasConsolidadasOperacionais) {
     const cls = classificarParte(linha[chaveColuna]);
     if (!cls) continue;
 
@@ -1296,7 +1539,7 @@ async function carregarUsuarios() {
 }
 
 /* =========================
-   SUPABASE - ARQUIVOS
+   SUPABASE - HELPERS GENÉRICOS
 ========================= */
 function isBlobLike(valor) {
   return (
@@ -1401,9 +1644,12 @@ function normalizarRegistroArquivoSupabase(reg) {
   };
 }
 
-async function buscarRegistroPorCampo({ campo, valor, ownerId }) {
+/* =========================
+   SUPABASE - BUSCA GENÉRICA
+========================= */
+async function buscarRegistroPorCampoNaTabela({ tabela, campo, valor, ownerId }) {
   try {
-    let query = supabase.from(SUPABASE_ARQUIVOS_TABLE).select("*").limit(1);
+    let query = supabase.from(tabela).select("*").limit(1);
 
     if (ownerId) query = query.eq("owner_id", ownerId);
     query = query.eq(campo, valor);
@@ -1445,14 +1691,68 @@ async function buscarRegistroArquivoNoSupabase({ arquivoKey, idNumerico, ownerId
 
   if (arquivoKey) {
     for (const campo of candidatosKey) {
-      const reg = await buscarRegistroPorCampo({ campo, valor: arquivoKey, ownerId });
+      const reg = await buscarRegistroPorCampoNaTabela({
+        tabela: SUPABASE_ARQUIVOS_TABLE,
+        campo,
+        valor: arquivoKey,
+        ownerId
+      });
       if (reg) return reg;
     }
   }
 
   if (Number.isFinite(idNumerico)) {
     for (const campo of candidatosId) {
-      const reg = await buscarRegistroPorCampo({ campo, valor: idNumerico, ownerId });
+      const reg = await buscarRegistroPorCampoNaTabela({
+        tabela: SUPABASE_ARQUIVOS_TABLE,
+        campo,
+        valor: idNumerico,
+        ownerId
+      });
+      if (reg) return reg;
+    }
+  }
+
+  return null;
+}
+
+async function buscarRegistroEntregasConsolidado({ arquivoKey, idNumerico, ownerId }) {
+  const candidatosKey = [
+    "arquivo_key",
+    "arquivoKey",
+    "key",
+    "arquivo_origem_key",
+    "arquivoOrigemKey"
+  ];
+
+  const candidatosId = [
+    "id",
+    "id_arquivo_origem",
+    "idArquivoOrigem",
+    "arquivo_id",
+    "arquivoId"
+  ];
+
+  if (arquivoKey) {
+    for (const campo of candidatosKey) {
+      const reg = await buscarRegistroPorCampoNaTabela({
+        tabela: SUPABASE_ENTREGAS_CONSOLIDADO_TABLE,
+        campo,
+        valor: arquivoKey,
+        ownerId
+      });
+      if (reg) return reg;
+    }
+  }
+
+  if (Number.isFinite(idNumerico)) {
+    for (const campo of candidatosId) {
+      const reg = await buscarRegistroPorCampoNaTabela({
+        tabela: SUPABASE_ENTREGAS_CONSOLIDADO_TABLE,
+        campo,
+        valor: idNumerico,
+        ownerId
+      });
       if (reg) return reg;
     }
   }
@@ -1478,7 +1778,161 @@ async function baixarBlobPorUrl(url, mimeType = "application/octet-stream") {
   return new Blob([ab], { type: mimeType });
 }
 
-async function carregarArquivoDoSupabase({ arquivoKey, idNumerico }) {
+function extrairLinhasJsonDoRegistroConsolidado(registroRaw) {
+  const candidatos = [
+    "linhasJson",
+    "linhas_json",
+    "json",
+    "json_data",
+    "data_json",
+    "conteudo_json",
+    "conteudoJson",
+    "payload_json",
+    "payloadJson",
+    "registros",
+    "rows",
+    "itens",
+    "dados"
+  ];
+
+  for (const campo of candidatos) {
+    const valor = registroRaw?.[campo];
+
+    if (Array.isArray(valor)) {
+      return valor;
+    }
+
+    if (typeof valor === "string" && valor.trim()) {
+      try {
+        const parsed = JSON.parse(valor);
+        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed?.rows)) return parsed.rows;
+        if (Array.isArray(parsed?.dados)) return parsed.dados;
+        if (Array.isArray(parsed?.itens)) return parsed.itens;
+      } catch {
+        // segue tentando outros formatos
+      }
+    }
+
+    if (valor && typeof valor === "object") {
+      if (Array.isArray(valor.rows)) return valor.rows;
+      if (Array.isArray(valor.dados)) return valor.dados;
+      if (Array.isArray(valor.itens)) return valor.itens;
+    }
+  }
+
+  return null;
+}
+
+function extrairCsvDoRegistroConsolidado(registroRaw) {
+  const candidatos = [
+    "csv",
+    "conteudo_csv",
+    "conteudoCsv",
+    "csv_texto",
+    "csvTexto",
+    "texto_csv",
+    "textoCsv"
+  ];
+
+  for (const campo of candidatos) {
+    const valor = registroRaw?.[campo];
+    if (typeof valor === "string" && valor.trim()) {
+      return valor;
+    }
+  }
+
+  return "";
+}
+
+async function extrairBlobDoRegistro(registroRaw) {
+  let blob = null;
+
+  const storagePath = extrairStoragePathDoRegistro(registroRaw);
+  if (storagePath) {
+    try {
+      blob = await baixarBlobDoStorage(storagePath);
+      if (blob) return blob;
+    } catch (e) {
+      console.warn("Falha ao baixar blob por storagePath:", e);
+    }
+  }
+
+  const fileUrl = primeiroValor(registroRaw, ["url", "file_url", "arquivo_url", "public_url"]);
+  if (fileUrl) {
+    try {
+      blob = await baixarBlobPorUrl(String(fileUrl), extrairMimeTypeDoRegistro(registroRaw));
+      if (blob) return blob;
+    } catch (e) {
+      console.warn("Falha ao baixar blob por URL:", e);
+    }
+  }
+
+  const b64 = primeiroValor(registroRaw, ["base64", "arquivoBase64", "conteudoBase64", "blobBase64"]);
+  if (typeof b64 === "string" && b64.trim()) {
+    try {
+      blob = base64ParaBlob(b64, extrairMimeTypeDoRegistro(registroRaw));
+      if (blob) return blob;
+    } catch (e) {
+      console.warn("Falha ao converter base64 em blob:", e);
+    }
+  }
+
+  const possivelBlob = primeiroValor(registroRaw, ["blob", "arquivoBlob", "file"]);
+  if (isBlobLike(possivelBlob)) return possivelBlob;
+
+  return null;
+}
+
+/* =========================
+   FONTE DO ARQUIVO PARA SEPARAÇÃO
+========================= */
+async function carregarLinhasDoEntregasConsolidado({ arquivoKey, idNumerico, ownerId }) {
+  const registroRaw = await buscarRegistroEntregasConsolidado({
+    arquivoKey,
+    idNumerico,
+    ownerId
+  });
+
+  if (!registroRaw) return null;
+
+  const linhasJsonDireto = extrairLinhasJsonDoRegistroConsolidado(registroRaw);
+  if (Array.isArray(linhasJsonDireto) && linhasJsonDireto.length) {
+    return {
+      registro: normalizarRegistroArquivoSupabase(registroRaw),
+      linhasJson: linhasJsonDireto,
+      fonte: "entregas_consolidado"
+    };
+  }
+
+  const csv = extrairCsvDoRegistroConsolidado(registroRaw);
+  if (csv) {
+    const linhasJsonCsv = csvTextoParaJson(csv);
+    if (Array.isArray(linhasJsonCsv) && linhasJsonCsv.length) {
+      return {
+        registro: normalizarRegistroArquivoSupabase(registroRaw),
+        linhasJson: linhasJsonCsv,
+        fonte: "entregas_consolidado"
+      };
+    }
+  }
+
+  const blob = await extrairBlobDoRegistro(registroRaw);
+  if (blob) {
+    const linhasJsonBlob = await lerExcelParaJson(blob);
+    if (Array.isArray(linhasJsonBlob) && linhasJsonBlob.length) {
+      return {
+        registro: normalizarRegistroArquivoSupabase(registroRaw),
+        linhasJson: linhasJsonBlob,
+        fonte: "entregas_consolidado"
+      };
+    }
+  }
+
+  return null;
+}
+
+async function carregarArquivoBaseDoSupabase({ arquivoKey, idNumerico }) {
   const ownerId = user?.id || null;
 
   const registroRaw = await buscarRegistroArquivoNoSupabase({
@@ -1492,28 +1946,7 @@ async function carregarArquivoDoSupabase({ arquivoKey, idNumerico }) {
   }
 
   const registro = normalizarRegistroArquivoSupabase(registroRaw);
-
-  let blob = null;
-
-  const storagePath = extrairStoragePathDoRegistro(registroRaw);
-  if (storagePath) blob = await baixarBlobDoStorage(storagePath);
-
-  if (!blob) {
-    const fileUrl = primeiroValor(registroRaw, ["url", "file_url", "arquivo_url", "public_url"]);
-    if (fileUrl) blob = await baixarBlobPorUrl(String(fileUrl), extrairMimeTypeDoRegistro(registroRaw));
-  }
-
-  if (!blob) {
-    const b64 = primeiroValor(registroRaw, ["base64", "arquivoBase64", "conteudoBase64", "blobBase64"]);
-    if (typeof b64 === "string" && b64.trim()) {
-      blob = base64ParaBlob(b64, extrairMimeTypeDoRegistro(registroRaw));
-    }
-  }
-
-  if (!blob) {
-    const possivelBlob = primeiroValor(registroRaw, ["blob", "arquivoBlob", "file"]);
-    if (isBlobLike(possivelBlob)) blob = possivelBlob;
-  }
+  const blob = await extrairBlobDoRegistro(registroRaw);
 
   if (!blob) {
     console.error("Registro encontrado, mas sem conteúdo utilizável:", registroRaw);
@@ -1522,7 +1955,54 @@ async function carregarArquivoDoSupabase({ arquivoKey, idNumerico }) {
     );
   }
 
-  return { registro, blob };
+  const linhasJson = await lerExcelParaJson(blob);
+
+  return {
+    registro,
+    linhasJson,
+    fonte: "arquivo_base"
+  };
+}
+
+async function carregarMetadadosArquivoBase({ arquivoKey, idNumerico }) {
+  const ownerId = user?.id || null;
+
+  const registroRaw = await buscarRegistroArquivoNoSupabase({
+    arquivoKey,
+    idNumerico,
+    ownerId,
+  });
+
+  if (!registroRaw) return null;
+
+  return normalizarRegistroArquivoSupabase(registroRaw);
+}
+
+async function carregarFonteArquivoParaSeparacao({ arquivoKey, idNumerico }) {
+  const ownerId = user?.id || null;
+
+  try {
+    const consolidado = await carregarLinhasDoEntregasConsolidado({
+      arquivoKey,
+      idNumerico,
+      ownerId
+    });
+
+    if (consolidado?.linhasJson?.length) {
+      console.info("Separação carregada de:", consolidado.fonte);
+      return consolidado;
+    }
+  } catch (e) {
+    console.warn("Falha ao carregar de entregas_consolidado. Indo para arquivo base:", e);
+  }
+
+  const base = await carregarArquivoBaseDoSupabase({
+    arquivoKey,
+    idNumerico
+  });
+
+  console.info("Separação carregada de:", base.fonte);
+  return base;
 }
 
 async function atualizarRegistroArquivoNoSupabaseParcial(idRegistro, patch) {
@@ -1562,9 +2042,9 @@ async function atualizarRegistroArquivoNoSupabaseParcial(idRegistro, patch) {
    ARQUIVO
 ========================= */
 async function carregarArquivoPorKey(arquivoKey) {
-  return await carregarArquivoDoSupabase({
+  return await carregarFonteArquivoParaSeparacao({
     arquivoKey: String(arquivoKey || "").trim(),
-    idNumerico: idArquivoAtual,
+    idNumerico: idArquivoAtual
   });
 }
 
@@ -1816,6 +2296,9 @@ async function enviarParteIndividualParaN8n({ tipo, chave }) {
   const nomeArquivoOrigem = registroArquivoAtual?.nome || "arquivo";
 
   const body = {
+    ownerId: obterOwnerIdAtual(),
+    usuarioId: String(u.id || ""),
+
     arquivoKey: arquivoKey || "",
     idArquivoOrigem: Number.isFinite(Number(idArquivoOrigem)) ? Number(idArquivoOrigem) : null,
     nomeArquivoOrigem,
@@ -1829,6 +2312,8 @@ async function enviarParteIndividualParaN8n({ tipo, chave }) {
   };
 
   const headersUsuario = {
+    "x-owner-id": obterOwnerIdAtual(),
+    "x-usuario-id": String(u.id || ""),
     "x-user-id": String(u.id || ""),
     "x-telegram-id": tgId,
     "x-telegram-username": tgUser ? `@${tgUser}` : "",
@@ -1865,15 +2350,22 @@ async function lancarPartes() {
   }
 
   botaoLancarPartes.disabled = true;
-  if (textoDicaLancamento) textoDicaLancamento.textContent = "Excluindo últimas mensagens…";
+  if (textoDicaLancamento) textoDicaLancamento.textContent = "Excluindo mensagens do arquivo…";
 
   try {
-    await excluirUltimasMensagensAntesDeEnviar("LOTE (Lançar partes geral)");
+    await excluirMensagensTelegramEspecificas({
+      modo: "ARQUIVO_INTEIRO",
+      contexto: "LOTE (Lançar partes geral)",
+      ownerId: obterOwnerIdAtual(),
+      arquivoKey: obterArquivoKeyAtual(),
+      idArquivoOrigem: idArquivoAtual ?? registroArquivoAtual?.id ?? null,
+      nomeArquivoOrigem: registroArquivoAtual?.nome || "",
+    });
   } catch (e) {
     console.error(e);
     botaoLancarPartes.disabled = false;
     if (textoDicaLancamento) textoDicaLancamento.textContent = "Falha ao excluir mensagens.";
-    alert(`❌ Falha ao excluir as últimas mensagens antes do lote.\n\n${e?.message || e}`);
+    alert(`❌ Falha ao excluir as mensagens do arquivo antes do lote.\n\n${e?.message || e}`);
     return;
   }
 
@@ -1996,6 +2488,7 @@ async function lancarPartes() {
       admin: {
         id: String(admin?.id || ""),
       },
+      ownerId: obterOwnerIdAtual(),
       opcoesPesquisa: {
         numeroPesquisa: opPrefFinal.numeroPesquisa || "",
         dataPesquisa: opPrefFinal.dataPesquisa || "",
@@ -2009,7 +2502,12 @@ async function lancarPartes() {
       itens: itensLote,
     };
 
-    const resp = await enviarLoteParaN8n(payloadLote);
+    const resp = await enviarLoteParaN8n(payloadLote, {
+      "x-owner-id": obterOwnerIdAtual(),
+      "x-arquivo-key": obterArquivoKeyAtual(),
+      "x-id-arquivo-origem": Number.isFinite(Number(idOrigemFinal)) ? String(idOrigemFinal) : "",
+      "x-nome-arquivo-origem": String(registroArquivoAtual?.nome || ""),
+    });
     const lancamentoId = resp?.lancamentoId || resp?.id || null;
 
     alert(
@@ -2047,24 +2545,36 @@ async function inicializar() {
 
     if (textoDicaLancamento) textoDicaLancamento.textContent = "Carregando…";
     if (botaoLancarPartes) botaoLancarPartes.disabled = true;
+    if (botaoExcluirMensagensTelegram) botaoExcluirMensagensTelegram.disabled = false;
 
     await carregarUsuarios();
 
-    const { registro, blob } = await carregarArquivoPorKey(arquivoKeyAtual);
+    const metaBase = await carregarMetadadosArquivoBase({
+      arquivoKey: arquivoKeyAtual,
+      idNumerico: idArquivoAtual,
+    });
+
+    const { registro, linhasJson, fonte } = await carregarArquivoPorKey(arquivoKeyAtual);
+
     registroArquivoAtual = {
       ...registro,
+      ...(metaBase || {}),
+      opcoesPesquisa: metaBase?.opcoesPesquisa || registro?.opcoesPesquisa || {},
       colunasVisiveis: {
         estado: true,
         cidade: true,
         regiao: true,
-        ...(registro?.colunasVisiveis || {}),
+        ...(metaBase?.colunasVisiveis || registro?.colunasVisiveis || {}),
       },
+      fonteSeparacao: fonte || "",
     };
 
     await persistirOpcoesPesquisaSeVieramDaUrl();
 
-    const linhasJson = await lerExcelParaJson(blob);
-    const { principais, sobras } = separarPorPartesESobras(linhasJson, registroArquivoAtual.colunasVisiveis);
+    const { principais, sobras } = separarPorPartesESobras(
+      linhasJson,
+      registroArquivoAtual.colunasVisiveis
+    );
 
     partesGeradas = principais;
     sobrasGeradas = sobras;
@@ -2081,6 +2591,10 @@ async function inicializar() {
       mostrarAlerta(`Nenhuma parte detectada. Verifique a coluna "${nomeColunaParte}" (P01, P02...).`);
     } else if (sobrasGeradas.length) {
       mostrarAlerta(`Detectei ${sobrasGeradas.length} sobra(s). Elas ficam no final e precisam de seleção manual.`);
+    }
+
+    if (registroArquivoAtual?.fonteSeparacao) {
+      console.info(`Fonte usada para separação: ${registroArquivoAtual.fonteSeparacao}`);
     }
 
     atualizarEstadoBotaoLancar();
@@ -2123,6 +2637,38 @@ botaoDownloadGeralPdf?.addEventListener("click", async () => {
   } catch (e) {
     console.error(e);
     alert(`Falha no download geral PDF.\n\n${e?.message || e}`);
+  }
+});
+
+botaoExcluirMensagensTelegram?.addEventListener("click", async () => {
+  try {
+    const confirmar = window.confirm(
+      "Deseja excluir as mensagens do Telegram relacionadas a este arquivo?\n\nIsso deve apagar somente as mensagens deste arquivo."
+    );
+
+    if (!confirmar) return;
+
+    botaoExcluirMensagensTelegram.disabled = true;
+    const textoOriginal = botaoExcluirMensagensTelegram.textContent;
+    botaoExcluirMensagensTelegram.textContent = "Excluindo...";
+
+    const resp = await excluirMensagensDoArquivoInteiro();
+
+    alert(
+      `✅ Exclusão solicitada com sucesso.\n` +
+      `Arquivo: ${registroArquivoAtual?.nome || "—"}\n` +
+      (resp?.apagadas !== undefined ? `Mensagens apagadas: ${resp.apagadas}\n` : "")
+    );
+
+    botaoExcluirMensagensTelegram.textContent = textoOriginal;
+    botaoExcluirMensagensTelegram.disabled = false;
+  } catch (e) {
+    console.error(e);
+    alert(`❌ Falha ao excluir mensagens do Telegram.\n\n${e?.message || e}`);
+    if (botaoExcluirMensagensTelegram) {
+      botaoExcluirMensagensTelegram.textContent = "🗑️ Excluir mensagens do Telegram";
+      botaoExcluirMensagensTelegram.disabled = false;
+    }
   }
 });
 
