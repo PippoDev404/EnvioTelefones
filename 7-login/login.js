@@ -77,8 +77,8 @@ botaoAlternarSenha?.addEventListener("click", () => {
 
   // muda o ícone
   botaoAlternarSenha.innerHTML = mostrando
-    ? '<i class="fa-regular fa-eye"></i>'
-    : '<i class="fa-regular fa-eye-slash"></i>';
+    ? '<i class="fa-regular fa-eye-slash"></i>'
+    : '<i class="fa-regular fa-eye"></i>';
 
   // acessibilidade
   botaoAlternarSenha.setAttribute(

@@ -14,7 +14,6 @@
 
   <link rel="stylesheet" href="../3-css/admArquivo.css" />
 
-  <!-- SheetJS -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css"
@@ -92,7 +91,6 @@
         <h2 class="tituloSecao">Distribuição</h2>
         <p class="textoAjuda">
           Selecione um usuário por parte. As <strong>Sobras</strong> ficam em outra tabela no final (sem auto-seleção).
-          A coluna <strong>Lançar</strong> é apenas placeholder (você vai implementar depois).
         </p>
       </div>
 
@@ -115,7 +113,6 @@
       </div>
     </section>
 
-    <!-- TABELA PRINCIPAL -->
     <section class="containerTabela">
       <table class="tabelaPartes">
         <thead>
@@ -139,13 +136,11 @@
       </div>
     </section>
 
-    <!-- TABELA SOBRAS -->
     <section class="secaoSobras">
       <div class="cabSobras">
         <h2 class="tituloSecao">Sobras</h2>
         <p class="textoAjuda">
-          Aqui ficam valores como <strong>1.1</strong>, <strong>2.3</strong>, etc. Você pode selecionar o usuário
-          manualmente (não há auto-seleção).
+          Aqui ficam valores como <strong>1.1</strong>, <strong>2.3</strong>, etc. Você pode selecionar o usuário manualmente.
         </p>
       </div>
 
@@ -171,7 +166,7 @@
       </section>
     </section>
 
-    <!-- Modal de visualização da parte -->
+    <!-- Modal visualizar -->
     <div class="overlayModal" id="overlayVisualizar" hidden>
       <div class="modalVisualizar" role="dialog" aria-modal="true" aria-labelledby="tituloVisualizar">
         <div class="modalTopo">
@@ -184,6 +179,51 @@
         <div class="containerTabelaModal">
           <table class="tabelaModal" id="tabelaModal"></table>
         </div>
+      </div>
+    </div>
+
+    <!-- Modal de mensagem -->
+    <div class="overlayModal" id="overlayMensagem" hidden>
+      <div class="modalPadrao" role="dialog" aria-modal="true" aria-labelledby="tituloMensagemModal">
+        <div class="modalTopo">
+          <h3 class="tituloModal" id="tituloMensagemModal">Mensagem</h3>
+          <button class="botaoSecundario" id="botaoFecharMensagem" type="button">Fechar</button>
+        </div>
+
+        <div class="modalConteudoMensagem">
+          <p class="textoMensagemModal" id="textoMensagemModal">—</p>
+        </div>
+
+        <div class="modalRodape">
+          <button class="botaoSecundario" id="botaoOkMensagem" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de confirmação -->
+    <div class="overlayModal" id="overlayConfirmacaoAcao" hidden>
+      <div class="modalPadrao" role="dialog" aria-modal="true" aria-labelledby="tituloConfirmacaoModal">
+        <div class="modalTopo">
+          <h3 class="tituloModal" id="tituloConfirmacaoModal">Confirmar ação</h3>
+          <button class="botaoSecundario" id="botaoFecharConfirmacao" type="button">Fechar</button>
+        </div>
+
+        <div class="modalConteudoMensagem">
+          <p class="textoMensagemModal" id="textoConfirmacaoModal">Tem certeza?</p>
+        </div>
+
+        <div class="modalRodape modalRodapeDuplo">
+          <button class="botaoSecundario" id="botaoCancelarConfirmacaoAcao" type="button">Cancelar</button>
+          <button class="botaoPerigo" id="botaoOkConfirmacaoAcao" type="button">Confirmar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Overlay de loading -->
+    <div class="overlayBusy" id="overlayBusy" hidden>
+      <div class="busyCard">
+        <div class="spinnerBusy"></div>
+        <p class="busyTexto" id="busyTexto">Processando…</p>
       </div>
     </div>
   </main>

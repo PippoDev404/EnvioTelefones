@@ -19,7 +19,7 @@ if (!ownerId) console.warn("Sem ownerId (sem sessão?)");
 // ============================
 // CONFIG
 // ============================
-const DIAS_RETENCAO_ARQUIVOS = 7; // ← altere aqui quando quiser
+const DIAS_RETENCAO_ARQUIVOS = 7;
 const SUPABASE_ARQUIVOS_TABLE = "arquivos";
 const SUPABASE_STORAGE_BUCKET = "arquivos";
 
@@ -67,6 +67,9 @@ let eventosTabelaVinculados = false;
 
 // cache em memória da listagem atual vinda do Supabase
 let arquivosAtuais = [];
+
+// trava simples
+let dashboardBusy = false;
 
 async function iniciarDashboard() {
   corpoTabelaArquivos = document.getElementById("corpoTabelaArquivos");
@@ -217,6 +220,10 @@ async function esperarIbeDb({ tentativas = 80, delayMs = 50 } = {}) {
     await new Promise((r) => setTimeout(r, delayMs));
   }
   return false;
+}
+
+function setDashboardBusy(flag) {
+  dashboardBusy = !!flag;
 }
 
 // ============================
@@ -630,13 +637,9 @@ async function excluirPorKeys(keysParaExcluir) {
   const arquivosParaExcluir = arquivosAtuais.filter((a) => keys.includes(obterArquivoKey(a)));
   const storagePaths = arquivosParaExcluir.map((a) => a.storagePath).filter(Boolean);
 
-  // primeiro tenta apagar do bucket
   const okBucket = await excluirArquivosDoBucket(storagePaths);
-
-  // depois apaga da tabela
   const okTabela = await excluirRegistrosDaTabelaPorKeys(keys);
 
-  // sempre remove local também
   await excluirArquivosLocaisPorKeys(keys);
 
   if (!okBucket || !okTabela) {
@@ -752,7 +755,6 @@ function renderizarTabela(arquivos) {
       <td class="tdAcoes">
         <div class="acoesLinha">
           <button class="botaoAcao" data-acao="opcoes" data-arquivo-key="${arquivoKey}">⚙️ Opções</button>
-          <button class="botaoAcao" data-acao="lancar" data-arquivo-key="${arquivoKey}">🚀 Lançar</button>
           <button class="botaoAcao" data-acao="ver" data-arquivo-key="${arquivoKey}">👁 Ver</button>
           <button class="botaoAcao" data-acao="excluir" data-arquivo-key="${arquivoKey}">🗑 Excluir</button>
         </div>
@@ -794,66 +796,42 @@ async function marcarComoProcessadoSePendente(arquivoKey) {
 async function aoClicarTabela(e) {
   const botao = e.target.closest("button");
   if (!botao) return;
+  if (dashboardBusy) return;
 
   const acao = String(botao.dataset.acao || "").toLowerCase();
   const arquivoKey = String(botao.dataset.arquivoKey || "");
   if (!arquivoKey) return;
 
-  if (acao === "opcoes") {
-    const arquivo = await pegarArquivoAtualPorKey(arquivoKey);
-    if (!arquivo) return;
-    abrirModalOpcoes(arquivo);
-    return;
-  }
+  setDashboardBusy(true);
 
-  if (acao === "excluir") {
-    await excluirArquivoUnico(arquivoKey);
-    return;
-  }
-
-  if (acao === "ver") {
-    try {
-      const arq = await pegarArquivoAtualPorKey(arquivoKey);
-      if (arq) registrarUltimaVisualizacaoDashboard(arq);
-    } catch {}
-
-    try {
-      await marcarComoProcessadoSePendente(arquivoKey);
-    } catch {}
-
-    window.location.href = `/4-html/admArquivo.html?key=${encodeURIComponent(arquivoKey)}`;
-    return;
-  }
-
-  if (acao === "lancar") {
-    try {
-      const arq = await pegarArquivoAtualPorKey(arquivoKey);
-      if (arq) registrarUltimaVisualizacaoDashboard(arq);
-    } catch {}
-
-    try {
-      await marcarComoProcessadoSePendente(arquivoKey);
-    } catch {}
-
-    const arquivo = await pegarArquivoAtualPorKey(arquivoKey);
-    const op = arquivo?.opcoesPesquisa || {};
-    const numeroPesquisa = normalizarNumeroPesquisa(op.numeroPesquisa || "");
-    const dataPesquisa = normalizarDataPesquisa(op.dataPesquisa || "");
-
-    if (!numeroPesquisa || !dataPesquisaValida(dataPesquisa)) {
-      alert("Antes de lançar, vá em ⚙️ Opções e preencha Número da pesquisa e Data (DD-MM-AAAA).");
+  try {
+    if (acao === "opcoes") {
+      const arquivo = await pegarArquivoAtualPorKey(arquivoKey);
+      if (!arquivo) return;
+      abrirModalOpcoes(arquivo);
       return;
     }
 
-    const qs = new URLSearchParams({
-      key: arquivoKey,
-      autoLancar: "1",
-      numeroPesquisa,
-      dataPesquisa
-    });
+    if (acao === "excluir") {
+      await excluirArquivoUnico(arquivoKey);
+      return;
+    }
 
-    window.location.href = `/4-html/admArquivo.html?${qs.toString()}`;
-    return;
+    if (acao === "ver") {
+      try {
+        const arq = await pegarArquivoAtualPorKey(arquivoKey);
+        if (arq) registrarUltimaVisualizacaoDashboard(arq);
+      } catch {}
+
+      try {
+        await marcarComoProcessadoSePendente(arquivoKey);
+      } catch {}
+
+      window.location.href = `/4-html/admArquivo.html?key=${encodeURIComponent(arquivoKey)}`;
+      return;
+    }
+  } finally {
+    setDashboardBusy(false);
   }
 }
 
@@ -913,17 +891,13 @@ async function atualizar() {
     return;
   }
 
-  // 1) exclui vencidos no banco + bucket + local
   await excluirArquivosExpirados();
 
-  // 2) busca novamente do banco e usa o banco como fonte principal
   const listaSupabase = await listarArquivosDoOwnerNoSupabase();
   arquivosAtuais = [...listaSupabase];
 
-  // 3) sincroniza cache local
   await syncArquivosSupabaseParaIndexedDb(listaSupabase);
 
-  // 4) renderiza usando a lista do banco
   vincularEventosTabelaUmaVez();
   renderizarTabela(listaSupabase);
   aplicarFiltros();

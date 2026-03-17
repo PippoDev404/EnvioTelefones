@@ -22,6 +22,8 @@ const FETCH_TIMEOUT_MS = 100000;
 const nomeColunaParte = "Nº PESQ.";
 const maxLinhasPreview = 80;
 
+const SESSION_AUTO_LANCAR_PREFIX = "ibespe:autoLancarExecutado:";
+
 /* =========================
    DOM
 ========================= */
@@ -72,6 +74,211 @@ let selecaoUsuarioPorParte = new Map();
 let selecaoUsuarioPorSobra = new Map();
 
 let chaveParteAbertaNoModal = null;
+
+let globalBusy = false;
+let globalBusyReason = "";
+let actionButtonsCache = [];
+
+/* =========================
+   MODAIS GERAIS (feedback/confirm)
+========================= */
+let modalUi = null;
+let modalResolveFn = null;
+
+function garantirModalUi() {
+  if (modalUi) return modalUi;
+
+  const style = document.createElement("style");
+  style.id = "admArquivoModalUiStyle";
+  style.textContent = `
+    .ibe-modal-overlay{
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.45);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:16px;
+      z-index:99999;
+    }
+    .ibe-modal-overlay[hidden]{
+      display:none !important;
+    }
+    .ibe-modal-box{
+      width:min(460px, 95vw);
+      background:#fff;
+      border:1px solid #ddd;
+      border-radius:16px;
+      box-shadow:0 18px 50px rgba(0,0,0,.20);
+      overflow:hidden;
+      font-family:Arial, Helvetica, sans-serif;
+    }
+    .ibe-modal-header{
+      padding:14px 16px;
+      border-bottom:1px solid #eee;
+      background:#f7f7f7;
+    }
+    .ibe-modal-title{
+      font-size:16px;
+      font-weight:800;
+      color:#111;
+    }
+    .ibe-modal-body{
+      padding:16px;
+      color:#222;
+      font-size:14px;
+      line-height:1.5;
+      white-space:pre-wrap;
+      word-break:break-word;
+    }
+    .ibe-modal-footer{
+      padding:14px 16px;
+      border-top:1px solid #eee;
+      display:flex;
+      justify-content:flex-end;
+      gap:10px;
+      flex-wrap:wrap;
+      background:#fafafa;
+    }
+    .ibe-modal-btn{
+      border:1px solid #d0d0d0;
+      background:#fff;
+      color:#111;
+      border-radius:10px;
+      padding:10px 14px;
+      cursor:pointer;
+      font-weight:700;
+      font-size:13px;
+    }
+    .ibe-modal-btn:disabled{
+      opacity:.6;
+      cursor:not-allowed;
+    }
+    .ibe-modal-btn-primary{
+      background:#111;
+      color:#fff;
+      border-color:#111;
+    }
+    .ibe-modal-btn-danger{
+      background:#c62828;
+      color:#fff;
+      border-color:#c62828;
+    }
+  `;
+  document.head.appendChild(style);
+
+  const overlay = document.createElement("div");
+  overlay.className = "ibe-modal-overlay";
+  overlay.hidden = true;
+  overlay.innerHTML = `
+    <div class="ibe-modal-box" role="dialog" aria-modal="true" aria-labelledby="ibeModalTitle">
+      <div class="ibe-modal-header">
+        <div class="ibe-modal-title" id="ibeModalTitle">Mensagem</div>
+      </div>
+      <div class="ibe-modal-body" id="ibeModalBody"></div>
+      <div class="ibe-modal-footer" id="ibeModalFooter"></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay && modalResolveFn) {
+      const fn = modalResolveFn;
+      modalResolveFn = null;
+      overlay.hidden = true;
+      fn(false);
+    }
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (!overlay.hidden && e.key === "Escape" && modalResolveFn) {
+      const fn = modalResolveFn;
+      modalResolveFn = null;
+      overlay.hidden = true;
+      fn(false);
+    }
+  });
+
+  modalUi = {
+    overlay,
+    title: overlay.querySelector("#ibeModalTitle"),
+    body: overlay.querySelector("#ibeModalBody"),
+    footer: overlay.querySelector("#ibeModalFooter"),
+  };
+
+  return modalUi;
+}
+
+function fecharModalGeral(resultado = false) {
+  const ui = garantirModalUi();
+  ui.overlay.hidden = true;
+
+  if (modalResolveFn) {
+    const fn = modalResolveFn;
+    modalResolveFn = null;
+    fn(resultado);
+  }
+}
+
+function abrirModalBase({ titulo = "Mensagem", mensagem = "", botoes = [] }) {
+  const ui = garantirModalUi();
+
+  ui.title.textContent = titulo;
+  ui.body.textContent = mensagem;
+  ui.footer.innerHTML = "";
+
+  for (const botao of botoes) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `ibe-modal-btn ${botao.classe || ""}`.trim();
+    btn.textContent = botao.texto || "OK";
+    btn.disabled = !!botao.disabled;
+    btn.addEventListener("click", () => {
+      if (typeof botao.onClick === "function") botao.onClick();
+    });
+    ui.footer.appendChild(btn);
+  }
+
+  ui.overlay.hidden = false;
+}
+
+function modalInfo(titulo, mensagem) {
+  return new Promise((resolve) => {
+    modalResolveFn = resolve;
+    abrirModalBase({
+      titulo,
+      mensagem,
+      botoes: [
+        {
+          texto: "OK",
+          classe: "ibe-modal-btn-primary",
+          onClick: () => fecharModalGeral(true),
+        },
+      ],
+    });
+  });
+}
+
+function modalConfirm(titulo, mensagem, { textoConfirmar = "Confirmar", perigo = false } = {}) {
+  return new Promise((resolve) => {
+    modalResolveFn = resolve;
+    abrirModalBase({
+      titulo,
+      mensagem,
+      botoes: [
+        {
+          texto: "Cancelar",
+          onClick: () => fecharModalGeral(false),
+        },
+        {
+          texto: textoConfirmar,
+          classe: perigo ? "ibe-modal-btn-danger" : "ibe-modal-btn-primary",
+          onClick: () => fecharModalGeral(true),
+        },
+      ],
+    });
+  });
+}
 
 /* =========================
    UTIL
@@ -230,6 +437,86 @@ function baixarCsvItem(item) {
   baixarBlobComoArquivo(blob, nome);
 }
 
+function atualizarCacheBotoesAcao() {
+  actionButtonsCache = Array.from(
+    document.querySelectorAll(
+      "button, select, input[type='button'], input[type='submit']"
+    )
+  ).filter(Boolean);
+}
+
+function setGlobalBusy(flag, reason = "") {
+  globalBusy = !!flag;
+  globalBusyReason = reason || "";
+
+  atualizarCacheBotoesAcao();
+
+  for (const el of actionButtonsCache) {
+    if (!el) continue;
+
+    if (el === botaoFecharVisualizar) continue;
+
+    if (globalBusy) {
+      if (!el.dataset.prevDisabledAdm) {
+        el.dataset.prevDisabledAdm = el.disabled ? "1" : "0";
+      }
+      el.disabled = true;
+    } else {
+      const prev = el.dataset.prevDisabledAdm;
+      if (prev === "0") el.disabled = false;
+      if (prev === "1") el.disabled = true;
+      delete el.dataset.prevDisabledAdm;
+    }
+  }
+
+  if (!globalBusy) {
+    atualizarEstadoBotaoLancar();
+  } else if (textoDicaLancamento && reason) {
+    textoDicaLancamento.textContent = reason;
+  }
+}
+
+async function executarAcaoGlobal(nomeAcao, fn) {
+  if (globalBusy) return;
+  setGlobalBusy(true, nomeAcao);
+
+  try {
+    return await fn();
+  } finally {
+    setGlobalBusy(false);
+  }
+}
+
+function montarChaveAutoLancar() {
+  const op = obterOpcoesPesquisaPreferenciais();
+  const key = obterArquivoKeyAtual() || String(idArquivoAtual || "");
+  return `${SESSION_AUTO_LANCAR_PREFIX}${key}:${op.numeroPesquisa || ""}:${op.dataPesquisa || ""}`;
+}
+
+function autoLancarJaExecutado() {
+  try {
+    const chave = montarChaveAutoLancar();
+    return sessionStorage.getItem(chave) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function marcarAutoLancarExecutado() {
+  try {
+    const chave = montarChaveAutoLancar();
+    sessionStorage.setItem(chave, "1");
+  } catch {}
+}
+
+function limparAutoLancarDaUrl() {
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("autoLancar");
+    window.history.replaceState({}, "", url.toString());
+  } catch {}
+}
+
 /* =========================
    CSV -> MATRIZ
 ========================= */
@@ -275,8 +562,7 @@ function csvTextoParaJson(csv) {
 function abrirJanelaImpressaoPdf(item) {
   const matriz = csvParaMatriz(item?.csv || "");
   if (!matriz.length) {
-    alert("Não há dados para gerar o PDF.");
-    return;
+    throw new Error("Não há dados para gerar o PDF.");
   }
 
   const nome = nomeArquivoDaParte(item, "pdf");
@@ -346,8 +632,7 @@ function abrirJanelaImpressaoPdf(item) {
 
   const win = window.open("", "_blank");
   if (!win) {
-    alert("O navegador bloqueou a janela de impressão/PDF.");
-    return;
+    throw new Error("O navegador bloqueou a janela de impressão/PDF.");
   }
 
   win.document.open();
@@ -365,8 +650,7 @@ async function baixarPdfItem(item) {
   const matriz = csvParaMatriz(item?.csv || "");
 
   if (!matriz.length) {
-    alert("Não há dados para gerar o PDF.");
-    return;
+    throw new Error("Não há dados para gerar o PDF.");
   }
 
   if (window.jspdf?.jsPDF) {
@@ -465,8 +749,7 @@ function baixarCsvDireto(nomeArquivo, conteudo) {
 
 async function baixarTodasAsPartesGeraisCsv() {
   if (!partesGeradas.length) {
-    alert("Nenhuma parte encontrada para download.");
-    return;
+    throw new Error("Nenhuma parte encontrada para download.");
   }
 
   for (let i = 0; i < partesGeradas.length; i++) {
@@ -479,13 +762,11 @@ async function baixarTodasAsPartesGeraisCsv() {
 
 async function baixarTodasAsPartesGeraisPdf() {
   if (!partesGeradas.length) {
-    alert("Nenhuma parte encontrada para download.");
-    return;
+    throw new Error("Nenhuma parte encontrada para download.");
   }
 
   if (!window.jspdf?.jsPDF) {
-    alert("Para download geral em PDF, adicione o jsPDF no HTML. Sem ele, o navegador pode bloquear várias janelas.");
-    return;
+    throw new Error("Para download geral em PDF, adicione o jsPDF no HTML.");
   }
 
   for (let i = 0; i < partesGeradas.length; i++) {
@@ -897,62 +1178,55 @@ function criarBotaoLancar({ texto, tipo, chave }) {
 
   btn.addEventListener("click", async (e) => {
     e.stopPropagation();
+    if (globalBusy) return;
 
-    try {
-      btn.disabled = true;
-      const oldText = btn.textContent;
+    await executarAcaoGlobal(`Processando ${texto}…`, async () => {
+      try {
+        const item = getItemPorChave({ tipo, chave });
+        if (!item) throw new Error("Item não encontrado para lançar.");
 
-      const item = getItemPorChave({ tipo, chave });
-      if (!item) throw new Error("Item não encontrado para lançar.");
+        const usuarioId =
+          tipo === "sobra"
+            ? (selecaoUsuarioPorSobra.get(chave) || "")
+            : (selecaoUsuarioPorParte.get(chave) || "");
 
-      const usuarioId =
-        tipo === "sobra"
-          ? (selecaoUsuarioPorSobra.get(chave) || "")
-          : (selecaoUsuarioPorParte.get(chave) || "");
+        if (!usuarioId) throw new Error("Selecione um usuário antes de lançar.");
 
-      if (!usuarioId) throw new Error("Selecione um usuário antes de lançar.");
+        const usuario = getUsuarioPorId(usuarioId);
+        if (!usuario) throw new Error("Usuário selecionado não encontrado.");
 
-      const usuario = getUsuarioPorId(usuarioId);
-      if (!usuario) throw new Error("Usuário selecionado não encontrado.");
+        const { telegramId } = obterTelegramDoUsuario(usuario);
+        if (!telegramId) throw new Error("Usuário sem telegramId.");
 
-      const { telegramId } = obterTelegramDoUsuario(usuario);
-      if (!telegramId) throw new Error("Usuário sem telegramId.");
+        if (textoDicaLancamento) textoDicaLancamento.textContent = `Excluindo mensagens de ${texto}…`;
 
-      btn.textContent = "Excluindo mensagens…";
+        await excluirMensagensTelegramEspecificas({
+          modo: "ESPECIFICO",
+          contexto: `INDIVIDUAL ${texto}`,
+          ownerId: obterOwnerIdAtual(),
+          usuarioId: String(usuario.id || ""),
+          telegramId: String(telegramId || ""),
+          chaveParte: String(item.chaveParte || ""),
+          categoria: tipo === "sobra" ? "SOBRA" : "PARTE",
+          arquivoKey: obterArquivoKeyAtual(),
+          idArquivoOrigem: idArquivoAtual ?? registroArquivoAtual?.id ?? null,
+          nomeArquivoOrigem: registroArquivoAtual?.nome || "",
+        });
 
-      await excluirMensagensTelegramEspecificas({
-        modo: "ESPECIFICO",
-        contexto: `INDIVIDUAL ${texto}`,
-        ownerId: obterOwnerIdAtual(),
-        usuarioId: String(usuario.id || ""),
-        telegramId: String(telegramId || ""),
-        chaveParte: String(item.chaveParte || ""),
-        categoria: tipo === "sobra" ? "SOBRA" : "PARTE",
-        arquivoKey: obterArquivoKeyAtual(),
-        idArquivoOrigem: idArquivoAtual ?? registroArquivoAtual?.id ?? null,
-        nomeArquivoOrigem: registroArquivoAtual?.nome || "",
-      });
+        if (textoDicaLancamento) textoDicaLancamento.textContent = `Enviando ${texto}…`;
 
-      btn.textContent = "Enviando…";
+        const resp = await enviarParteIndividualParaN8n({ tipo, chave });
+        const lancamentoId = resp?.lancamentoId || resp?.id || "";
 
-      const resp = await enviarParteIndividualParaN8n({ tipo, chave });
-      const lancamentoId = resp?.lancamentoId || resp?.id || "";
-
-      alert(
-        `✅ Enviado!\n` +
-        `Item: ${texto}\n` +
-        (lancamentoId ? `LancamentoId: ${lancamentoId}\n` : "") +
-        `Resposta do n8n recebida.`
-      );
-
-      btn.textContent = oldText;
-      btn.disabled = false;
-    } catch (err) {
-      console.error(err);
-      alert(`❌ Falha ao enviar ${texto}\n\n${err?.message || err}`);
-      btn.disabled = false;
-      btn.textContent = texto;
-    }
+        await modalInfo(
+          "Envio concluído",
+          `✅ Enviado com sucesso!\n\nItem: ${texto}\n${lancamentoId ? `LancamentoId: ${lancamentoId}\n` : ""}Resposta do n8n recebida.`
+        );
+      } catch (err) {
+        console.error(err);
+        await modalInfo("Falha no envio", `❌ Falha ao enviar ${texto}\n\n${err?.message || err}`);
+      }
+    });
   });
 
   return btn;
@@ -978,26 +1252,42 @@ function criarContainerAcoesItem(item, origem = "parte") {
   const btnVisualizar = criarBotaoAcaoPequeno({
     texto: "👁 Visualizar",
     titulo: "Visualizar",
-    onClick: () => abrirModalVisualizar(item.chaveParte, origem),
+    onClick: () => {
+      if (globalBusy) return;
+      abrirModalVisualizar(item.chaveParte, origem);
+    },
   });
 
   const btnPdf = criarBotaoAcaoPequeno({
     texto: "📄 PDF",
     titulo: "Baixar PDF",
     onClick: async () => {
-      try {
-        await baixarPdfItem(item);
-      } catch (e) {
-        console.error(e);
-        alert(`Falha ao gerar PDF.\n\n${e?.message || e}`);
-      }
+      if (globalBusy) return;
+      await executarAcaoGlobal("Gerando PDF…", async () => {
+        try {
+          await baixarPdfItem(item);
+        } catch (e) {
+          console.error(e);
+          await modalInfo("Falha ao gerar PDF", `❌ Falha ao gerar PDF.\n\n${e?.message || e}`);
+        }
+      });
     },
   });
 
   const btnCsv = criarBotaoAcaoPequeno({
     texto: "⬇ CSV",
     titulo: "Baixar CSV",
-    onClick: () => baixarCsvItem(item),
+    onClick: async () => {
+      if (globalBusy) return;
+      await executarAcaoGlobal("Preparando CSV…", async () => {
+        try {
+          baixarCsvItem(item);
+        } catch (e) {
+          console.error(e);
+          await modalInfo("Falha no download CSV", `❌ Falha ao baixar CSV.\n\n${e?.message || e}`);
+        }
+      });
+    },
   });
 
   div.appendChild(btnVisualizar);
@@ -1028,7 +1318,11 @@ function criarSelectUsuarios({ valorSelecionado, onChange }) {
 
   if (valorSelecionado) select.value = String(valorSelecionado);
 
-  select.addEventListener("change", () => onChange(select.value ? String(select.value) : ""));
+  select.addEventListener("change", () => {
+    if (globalBusy) return;
+    onChange(select.value ? String(select.value) : "");
+  });
+
   return select;
 }
 
@@ -1157,6 +1451,11 @@ function renderizarTabelaSobras() {
 
 function atualizarEstadoBotaoLancar() {
   if (!botaoLancarPartes) return;
+
+  if (globalBusy) {
+    botaoLancarPartes.disabled = true;
+    return;
+  }
 
   const totalPrincipais = partesGeradas.length;
   const selPrincipais = selecaoUsuarioPorParte.size;
@@ -2334,40 +2633,34 @@ async function enviarParteIndividualParaN8n({ tipo, chave }) {
 async function lancarPartes() {
   const erro = validarDistribuicao();
   if (erro) {
-    alert(erro);
+    await modalInfo("Distribuição incompleta", erro);
     return;
   }
 
   if (!window.ibeDb || typeof window.ibeDb.salvarDistribuicaoDb !== "function") {
-    alert("db.js não tem salvarDistribuicaoDb(itens).");
+    await modalInfo("Erro", "db.js não tem salvarDistribuicaoDb(itens).");
     return;
   }
 
   const opPref = obterOpcoesPesquisaPreferenciais();
   if (partesGeradas.length > 0 && !opPref.valida) {
-    alert("Faltam opções do link. Volte ao Dashboard e preencha ⚙️ Opções (Número da pesquisa e Data DD-MM-AAAA) antes de lançar.");
+    await modalInfo(
+      "Opções da pesquisa ausentes",
+      "Faltam opções do link. Volte ao Dashboard e preencha ⚙️ Opções (Número da pesquisa e Data DD-MM-AAAA) antes de lançar."
+    );
     return;
   }
 
-  botaoLancarPartes.disabled = true;
   if (textoDicaLancamento) textoDicaLancamento.textContent = "Excluindo mensagens do arquivo…";
 
-  try {
-    await excluirMensagensTelegramEspecificas({
-      modo: "ARQUIVO_INTEIRO",
-      contexto: "LOTE (Lançar partes geral)",
-      ownerId: obterOwnerIdAtual(),
-      arquivoKey: obterArquivoKeyAtual(),
-      idArquivoOrigem: idArquivoAtual ?? registroArquivoAtual?.id ?? null,
-      nomeArquivoOrigem: registroArquivoAtual?.nome || "",
-    });
-  } catch (e) {
-    console.error(e);
-    botaoLancarPartes.disabled = false;
-    if (textoDicaLancamento) textoDicaLancamento.textContent = "Falha ao excluir mensagens.";
-    alert(`❌ Falha ao excluir as mensagens do arquivo antes do lote.\n\n${e?.message || e}`);
-    return;
-  }
+  await excluirMensagensTelegramEspecificas({
+    modo: "ARQUIVO_INTEIRO",
+    contexto: "LOTE (Lançar partes geral)",
+    ownerId: obterOwnerIdAtual(),
+    arquivoKey: obterArquivoKeyAtual(),
+    idArquivoOrigem: idArquivoAtual ?? registroArquivoAtual?.id ?? null,
+    nomeArquivoOrigem: registroArquivoAtual?.nome || "",
+  });
 
   if (textoDicaLancamento) textoDicaLancamento.textContent = "Lançando…";
 
@@ -2421,112 +2714,101 @@ async function lancarPartes() {
       };
     });
 
-  try {
-    await window.ibeDb.salvarDistribuicaoDb([...itensPrincipaisSalvar, ...itensSobrasSalvar]);
+  await window.ibeDb.salvarDistribuicaoDb([...itensPrincipaisSalvar, ...itensSobrasSalvar]);
 
-    if (textoDicaLancamento) textoDicaLancamento.textContent = "Enviando lote para o servidor…";
+  if (textoDicaLancamento) textoDicaLancamento.textContent = "Enviando lote para o servidor…";
 
-    const admin = obterAdminAtualLocal();
-    const itensLote = [];
+  const admin = obterAdminAtualLocal();
+  const itensLote = [];
 
-    for (const i of itensPrincipaisSalvar) {
-      const u = getUsuarioPorId(i.usuarioId);
-      const { telegramId, telegramUsername } = obterTelegramDoUsuario(u || {});
-      if (!telegramId) throw new Error(`Usuário ${i.usuarioId} está sem telegramId (PARTE ${i.chaveParte}).`);
+  for (const i of itensPrincipaisSalvar) {
+    const u = getUsuarioPorId(i.usuarioId);
+    const { telegramId, telegramUsername } = obterTelegramDoUsuario(u || {});
+    if (!telegramId) throw new Error(`Usuário ${i.usuarioId} está sem telegramId (PARTE ${i.chaveParte}).`);
 
-      itensLote.push({
-        usuario: {
-          id: String(i.usuarioId),
-          telegramId: String(telegramId),
-          telegramUsername: telegramUsername ? `@${String(telegramUsername).replace(/^@/, "")}` : "",
-        },
-        item: {
-          categoria: "PARTE",
-          chaveParte: i.chaveParte,
-          totalLinhas: Number(i.totalLinhas || 0),
-          tamanhoBytes: Number(i.tamanhoBytes || 0),
-          csv: i.csv || "",
-          linkQuestionario: i.linkQuestionario || "",
-        },
-      });
-    }
-
-    for (const i of itensSobrasSalvar) {
-      const u = getUsuarioPorId(i.usuarioId);
-      const { telegramId, telegramUsername } = obterTelegramDoUsuario(u || {});
-      if (!telegramId) throw new Error(`Usuário ${i.usuarioId} está sem telegramId (SOBRA ${i.chaveParte}).`);
-
-      itensLote.push({
-        usuario: {
-          id: String(i.usuarioId),
-          telegramId: String(telegramId),
-          telegramUsername: telegramUsername ? `@${String(telegramUsername).replace(/^@/, "")}` : "",
-        },
-        item: {
-          categoria: "SOBRA",
-          chaveParte: i.chaveParte,
-          labelVisivel: i.labelVisivel || i.chaveParte.replace(/^S/, "P"),
-          totalLinhas: Number(i.totalLinhas || 0),
-          tamanhoBytes: Number(i.tamanhoBytes || 0),
-          csv: i.csv || "",
-          linkQuestionario: "",
-        },
-      });
-    }
-
-    const opPrefFinal = obterOpcoesPesquisaPreferenciais();
-
-    const payloadLote = {
-      arquivo: {
-        arquivoKey: obterArquivoKeyAtual(),
-        idArquivoOrigem: Number.isFinite(Number(idOrigemFinal)) ? Number(idOrigemFinal) : null,
-        nomeArquivoOrigem: registroArquivoAtual?.nome || "arquivo",
-        dataArquivo: registroArquivoAtual?.data || "",
-        tamanhoArquivo: registroArquivoAtual?.tamanho || "",
-        statusArquivo: registroArquivoAtual?.status || "",
+    itensLote.push({
+      usuario: {
+        id: String(i.usuarioId),
+        telegramId: String(telegramId),
+        telegramUsername: telegramUsername ? `@${String(telegramUsername).replace(/^@/, "")}` : "",
       },
-      admin: {
-        id: String(admin?.id || ""),
+      item: {
+        categoria: "PARTE",
+        chaveParte: i.chaveParte,
+        totalLinhas: Number(i.totalLinhas || 0),
+        tamanhoBytes: Number(i.tamanhoBytes || 0),
+        csv: i.csv || "",
+        linkQuestionario: i.linkQuestionario || "",
       },
-      ownerId: obterOwnerIdAtual(),
-      opcoesPesquisa: {
-        numeroPesquisa: opPrefFinal.numeroPesquisa || "",
-        dataPesquisa: opPrefFinal.dataPesquisa || "",
-        baseUrl: QUESTIONARIO_BASE_URL,
-        fonte: opPrefFinal.fonte || "",
-      },
-      opcoes: {
-        criarLancamento: true,
-        salvarDistribuicao: true,
-      },
-      itens: itensLote,
-    };
-
-    const resp = await enviarLoteParaN8n(payloadLote, {
-      "x-owner-id": obterOwnerIdAtual(),
-      "x-arquivo-key": obterArquivoKeyAtual(),
-      "x-id-arquivo-origem": Number.isFinite(Number(idOrigemFinal)) ? String(idOrigemFinal) : "",
-      "x-nome-arquivo-origem": String(registroArquivoAtual?.nome || ""),
     });
-    const lancamentoId = resp?.lancamentoId || resp?.id || null;
-
-    alert(
-      `✅ Lote enviado ao n8n!\n` +
-      `Partes: ${itensPrincipaisSalvar.length}\n` +
-      `Sobras enviadas: ${itensSobrasSalvar.length} (opcional)\n` +
-      (lancamentoId ? `LancamentoId: ${lancamentoId}\n` : "")
-    );
-
-    botaoLancarPartes.disabled = false;
-    if (textoDicaLancamento) textoDicaLancamento.textContent = "Lote enviado com sucesso.";
-    atualizarEstadoBotaoLancar();
-  } catch (e) {
-    console.error(e);
-    alert(`❌ Falha ao lançar/enviar lote.\n\n${e?.message || e}`);
-    botaoLancarPartes.disabled = false;
-    if (textoDicaLancamento) textoDicaLancamento.textContent = "Falha ao enviar.";
-    atualizarEstadoBotaoLancar();
   }
+
+  for (const i of itensSobrasSalvar) {
+    const u = getUsuarioPorId(i.usuarioId);
+    const { telegramId, telegramUsername } = obterTelegramDoUsuario(u || {});
+    if (!telegramId) throw new Error(`Usuário ${i.usuarioId} está sem telegramId (SOBRA ${i.chaveParte}).`);
+
+    itensLote.push({
+      usuario: {
+        id: String(i.usuarioId),
+        telegramId: String(telegramId),
+        telegramUsername: telegramUsername ? `@${String(telegramUsername).replace(/^@/, "")}` : "",
+      },
+      item: {
+        categoria: "SOBRA",
+        chaveParte: i.chaveParte,
+        labelVisivel: i.labelVisivel || i.chaveParte.replace(/^S/, "P"),
+        totalLinhas: Number(i.totalLinhas || 0),
+        tamanhoBytes: Number(i.tamanhoBytes || 0),
+        csv: i.csv || "",
+        linkQuestionario: "",
+      },
+    });
+  }
+
+  const opPrefFinal = obterOpcoesPesquisaPreferenciais();
+
+  const payloadLote = {
+    arquivo: {
+      arquivoKey: obterArquivoKeyAtual(),
+      idArquivoOrigem: Number.isFinite(Number(idOrigemFinal)) ? Number(idOrigemFinal) : null,
+      nomeArquivoOrigem: registroArquivoAtual?.nome || "arquivo",
+      dataArquivo: registroArquivoAtual?.data || "",
+      tamanhoArquivo: registroArquivoAtual?.tamanho || "",
+      statusArquivo: registroArquivoAtual?.status || "",
+    },
+    admin: {
+      id: String(admin?.id || ""),
+    },
+    ownerId: obterOwnerIdAtual(),
+    opcoesPesquisa: {
+      numeroPesquisa: opPrefFinal.numeroPesquisa || "",
+      dataPesquisa: opPrefFinal.dataPesquisa || "",
+      baseUrl: QUESTIONARIO_BASE_URL,
+      fonte: opPrefFinal.fonte || "",
+    },
+    opcoes: {
+      criarLancamento: true,
+      salvarDistribuicao: true,
+    },
+    itens: itensLote,
+  };
+
+  const resp = await enviarLoteParaN8n(payloadLote, {
+    "x-owner-id": obterOwnerIdAtual(),
+    "x-arquivo-key": obterArquivoKeyAtual(),
+    "x-id-arquivo-origem": Number.isFinite(Number(idOrigemFinal)) ? String(idOrigemFinal) : "",
+    "x-nome-arquivo-origem": String(registroArquivoAtual?.nome || ""),
+  });
+  const lancamentoId = resp?.lancamentoId || resp?.id || null;
+
+  if (textoDicaLancamento) textoDicaLancamento.textContent = "Lote enviado com sucesso.";
+  atualizarEstadoBotaoLancar();
+
+  await modalInfo(
+    "Lote enviado",
+    `✅ Lote enviado ao n8n!\n\nPartes: ${itensPrincipaisSalvar.length}\nSobras enviadas: ${itensSobrasSalvar.length} (opcional)\n${lancamentoId ? `LancamentoId: ${lancamentoId}\n` : ""}`
+  );
 }
 
 /* =========================
@@ -2598,15 +2880,27 @@ async function inicializar() {
     }
 
     atualizarEstadoBotaoLancar();
+    limparAutoLancarDaUrl();
 
     if (obterFlagAutoLancar()) {
       const podeLancarAgora = botaoLancarPartes && botaoLancarPartes.disabled === false;
+      const jaExecutado = autoLancarJaExecutado();
 
-      if (podeLancarAgora) {
-        await lancarPartes();
-      } else {
-        alert(
-          "Auto-lançar: faltam seleções obrigatórias nas PARTES principais (P01, P02...).\nSelecione e clique em 'Lançar partes (geral)'.\n\n(Sobras são opcionais.)"
+      if (!jaExecutado && podeLancarAgora) {
+        marcarAutoLancarExecutado();
+
+        await executarAcaoGlobal("Executando auto-lançamento…", async () => {
+          try {
+            await lancarPartes();
+          } catch (e) {
+            console.error(e);
+            await modalInfo("Falha no auto-lançamento", `❌ Falha ao lançar automaticamente.\n\n${e?.message || e}`);
+          }
+        });
+      } else if (!jaExecutado && !podeLancarAgora) {
+        await modalInfo(
+          "Auto-lançar não executado",
+          "Faltam seleções obrigatórias nas PARTES principais (P01, P02...).\nSelecione e clique em 'Lançar partes (geral)'.\n\n(Sobras são opcionais.)"
         );
       }
     }
@@ -2620,59 +2914,81 @@ async function inicializar() {
 /* =========================
    EVENTOS
 ========================= */
-botaoRecarregar?.addEventListener("click", async () => await inicializar());
+botaoRecarregar?.addEventListener("click", async () => {
+  if (globalBusy) return;
+  await executarAcaoGlobal("Recarregando…", async () => {
+    await inicializar();
+  });
+});
 
 botaoDownloadGeralCsv?.addEventListener("click", async () => {
-  try {
-    await baixarTodasAsPartesGeraisCsv();
-  } catch (e) {
-    console.error(e);
-    alert(`Falha no download geral CSV.\n\n${e?.message || e}`);
-  }
+  if (globalBusy) return;
+
+  await executarAcaoGlobal("Baixando CSV geral…", async () => {
+    try {
+      await baixarTodasAsPartesGeraisCsv();
+      await modalInfo("Download concluído", "✅ Download geral CSV iniciado com sucesso.");
+    } catch (e) {
+      console.error(e);
+      await modalInfo("Falha no download CSV", `❌ Falha no download geral CSV.\n\n${e?.message || e}`);
+    }
+  });
 });
 
 botaoDownloadGeralPdf?.addEventListener("click", async () => {
-  try {
-    await baixarTodasAsPartesGeraisPdf();
-  } catch (e) {
-    console.error(e);
-    alert(`Falha no download geral PDF.\n\n${e?.message || e}`);
-  }
+  if (globalBusy) return;
+
+  await executarAcaoGlobal("Baixando PDF geral…", async () => {
+    try {
+      await baixarTodasAsPartesGeraisPdf();
+      await modalInfo("Download concluído", "✅ Download geral PDF iniciado com sucesso.");
+    } catch (e) {
+      console.error(e);
+      await modalInfo("Falha no download PDF", `❌ Falha no download geral PDF.\n\n${e?.message || e}`);
+    }
+  });
 });
 
 botaoExcluirMensagensTelegram?.addEventListener("click", async () => {
-  try {
-    const confirmar = window.confirm(
-      "Deseja excluir as mensagens do Telegram relacionadas a este arquivo?\n\nIsso deve apagar somente as mensagens deste arquivo."
-    );
+  if (globalBusy) return;
 
-    if (!confirmar) return;
+  const confirmar = await modalConfirm(
+    "Excluir mensagens do Telegram",
+    "Deseja excluir as mensagens do Telegram relacionadas a este arquivo?\n\nIsso deve apagar somente as mensagens deste arquivo.",
+    { textoConfirmar: "Excluir", perigo: true }
+  );
 
-    botaoExcluirMensagensTelegram.disabled = true;
-    const textoOriginal = botaoExcluirMensagensTelegram.textContent;
-    botaoExcluirMensagensTelegram.textContent = "Excluindo...";
+  if (!confirmar) return;
 
-    const resp = await excluirMensagensDoArquivoInteiro();
+  await executarAcaoGlobal("Excluindo mensagens do Telegram…", async () => {
+    try {
+      const resp = await excluirMensagensDoArquivoInteiro();
 
-    alert(
-      `✅ Exclusão solicitada com sucesso.\n` +
-      `Arquivo: ${registroArquivoAtual?.nome || "—"}\n` +
-      (resp?.apagadas !== undefined ? `Mensagens apagadas: ${resp.apagadas}\n` : "")
-    );
-
-    botaoExcluirMensagensTelegram.textContent = textoOriginal;
-    botaoExcluirMensagensTelegram.disabled = false;
-  } catch (e) {
-    console.error(e);
-    alert(`❌ Falha ao excluir mensagens do Telegram.\n\n${e?.message || e}`);
-    if (botaoExcluirMensagensTelegram) {
-      botaoExcluirMensagensTelegram.textContent = "🗑️ Excluir mensagens do Telegram";
-      botaoExcluirMensagensTelegram.disabled = false;
+      await modalInfo(
+        "Exclusão concluída",
+        `✅ Exclusão solicitada com sucesso.\n\nArquivo: ${registroArquivoAtual?.nome || "—"}\n${resp?.apagadas !== undefined ? `Mensagens apagadas: ${resp.apagadas}\n` : ""}`
+      );
+    } catch (e) {
+      console.error(e);
+      await modalInfo("Falha na exclusão", `❌ Falha ao excluir mensagens do Telegram.\n\n${e?.message || e}`);
     }
-  }
+  });
 });
 
-botaoLancarPartes?.addEventListener("click", async () => await lancarPartes());
+botaoLancarPartes?.addEventListener("click", async () => {
+  if (globalBusy) return;
+
+  await executarAcaoGlobal("Lançando partes…", async () => {
+    try {
+      await lancarPartes();
+    } catch (e) {
+      console.error(e);
+      await modalInfo("Falha no lote", `❌ Falha ao lançar/enviar lote.\n\n${e?.message || e}`);
+      if (textoDicaLancamento) textoDicaLancamento.textContent = "Falha ao enviar.";
+      atualizarEstadoBotaoLancar();
+    }
+  });
+});
 
 function boot() {
   inicializar().catch((e) => {
