@@ -431,12 +431,6 @@ function baixarBlobComoArquivo(blob, nomeArquivo) {
   URL.revokeObjectURL(url);
 }
 
-function baixarCsvItem(item) {
-  const nome = nomeArquivoDaParte(item, "csv");
-  const blob = new Blob([item?.csv || ""], { type: "text/csv;charset=utf-8" });
-  baixarBlobComoArquivo(blob, nome);
-}
-
 function atualizarCacheBotoesAcao() {
   actionButtonsCache = Array.from(
     document.querySelectorAll(
@@ -506,7 +500,7 @@ function marcarAutoLancarExecutado() {
   try {
     const chave = montarChaveAutoLancar();
     sessionStorage.setItem(chave, "1");
-  } catch {}
+  } catch { }
 }
 
 function limparAutoLancarDaUrl() {
@@ -514,7 +508,7 @@ function limparAutoLancarDaUrl() {
     const url = new URL(window.location.href);
     url.searchParams.delete("autoLancar");
     window.history.replaceState({}, "", url.toString());
-  } catch {}
+  } catch { }
 }
 
 /* =========================
@@ -526,15 +520,17 @@ function csvParaMatriz(csv) {
   try {
     const wb = window.XLSX.read(csv || "", {
       type: "string",
-      raw: false,
-      codepage: 65001
+      raw: true,
+      codepage: 65001,
+      cellText: false,
+      cellDates: false
     });
 
     const ws = wb.Sheets[wb.SheetNames[0]];
     return window.XLSX.utils.sheet_to_json(ws, {
       header: 1,
       defval: "",
-      raw: false,
+      raw: true,
       blankrows: false
     });
   } catch (e) {
@@ -545,22 +541,308 @@ function csvParaMatriz(csv) {
 
 function csvTextoParaJson(csv) {
   if (!window.XLSX) return [];
+
   try {
     const wb = window.XLSX.read(csv || "", {
       type: "string",
-      raw: false,
-      codepage: 65001
+      raw: true,
+      codepage: 65001,
+      cellText: false,
+      cellDates: false
     });
+
     const ws = wb.Sheets[wb.SheetNames[0]];
-    return window.XLSX.utils.sheet_to_json(ws, { defval: "" }) || [];
+    return window.XLSX.utils.sheet_to_json(ws, {
+      defval: "",
+      raw: true
+    }) || [];
   } catch (e) {
     console.warn("Falha ao converter CSV para JSON:", e);
     return [];
   }
 }
 
+function excelSerialParaDate(valor) {
+  const numero = Number(valor);
+  if (!Number.isFinite(numero)) return null;
+
+  const dias = Math.floor(numero);
+  const fracao = numero - dias;
+
+  const utcDias = (dias - 25569) * 86400 * 1000;
+  const utcFracao = Math.round(fracao * 86400 * 1000);
+
+  const data = new Date(utcDias + utcFracao);
+  if (Number.isNaN(data.getTime())) return null;
+
+  return data;
+}
+
+function formatarDataHoraManualBr(data, incluirHora = false) {
+  if (!(data instanceof Date) || Number.isNaN(data.getTime())) return "";
+
+  const dia = String(data.getDate()).padStart(2, "0");
+  const mes = String(data.getMonth() + 1).padStart(2, "0");
+  const ano = data.getFullYear();
+
+  if (!incluirHora) {
+    return `${dia}/${mes}/${ano}`;
+  }
+
+  const hora = String(data.getHours()).padStart(2, "0");
+  const minuto = String(data.getMinutes()).padStart(2, "0");
+  const segundo = String(data.getSeconds()).padStart(2, "0");
+
+  return `${dia}/${mes}/${ano} ${hora}:${minuto}:${segundo}`;
+}
+
+function normalizarNomeColunaControle(chave) {
+  return String(chave || "")
+    .replace(/^\uFEFF/, "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase()
+    .replace(/[.\-\/\\]/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function colunaPareceData(coluna) {
+  const n = normalizarNomeColunaControle(coluna);
+
+  if (
+    n === "DIA_PESQ" ||
+    n === "DIA_PESQUISA" ||
+    n === "DATA" ||
+    n === "DATA_PESQ" ||
+    n === "DATA_PESQUISA"
+  ) {
+    return "data";
+  }
+
+  if (
+    n === "DT_ALTERACAO" ||
+    n === "DATA_HORA" ||
+    n === "DATAHORA" ||
+    n === "ULTIMA_ALTERACAO"
+  ) {
+    return "datahora";
+  }
+
+  return null;
+}
+
+function formatarValorParaDownload(coluna, valor) {
+  if (valor === null || valor === undefined) return "";
+
+  if (valor instanceof Date && !Number.isNaN(valor.getTime())) {
+    const tipo = colunaPareceData(coluna);
+    return formatarDataHoraManualBr(valor, tipo === "datahora");
+  }
+
+  const textoOriginal = String(valor).trim();
+  if (!textoOriginal) return "";
+
+  const tipoData = colunaPareceData(coluna);
+
+  // Se já vier em formato de data BR, preserva exatamente
+  if (tipoData && /^\d{2}\/\d{2}\/\d{4}$/.test(textoOriginal)) {
+    return textoOriginal;
+  }
+
+  // Se já vier em formato data/hora BR, preserva
+  if (tipoData && /^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}(:\d{2})?$/.test(textoOriginal)) {
+    return textoOriginal;
+  }
+
+  // Só tenta converter serial do Excel quando for realmente número puro
+  if (tipoData && /^\d+([.,]\d+)?$/.test(textoOriginal)) {
+    const num = Number(textoOriginal.replace(",", "."));
+    if (Number.isFinite(num)) {
+      const data = excelSerialParaDate(num);
+      if (data) {
+        return formatarDataHoraManualBr(data, tipoData === "datahora");
+      }
+    }
+  }
+
+  return textoOriginal;
+}
+
+function colunaPareceTelefone(coluna) {
+  const n = normalizarNomeColunaControle(coluna);
+
+  return (
+    n === "TF1" ||
+    n === "TF2" ||
+    n === "TF3" ||
+    n === "TF4" ||
+    n === "TELEFONE" ||
+    n === "CELULAR" ||
+    n === "WHATSAPP"
+  );
+}
+
+function formatarValorParaPdf(coluna, valor) {
+  const valorFormatadoBase = formatarValorParaDownload(coluna, valor);
+
+  if (valorFormatadoBase === null || valorFormatadoBase === undefined) return "";
+
+  const texto = String(valorFormatadoBase).trim();
+  if (!texto) return "";
+
+  if (colunaPareceTelefone(coluna)) {
+    const soDigitos = texto.replace(/\D/g, "");
+
+    if (soDigitos.length >= 10 && !soDigitos.startsWith("0")) {
+      return `0${soDigitos}`;
+    }
+
+    return soDigitos || texto;
+  }
+
+  return texto;
+}
+
+function escCsvComDelimitador(v, delimitador = ";") {
+  const s = String(v ?? "");
+  const regex = new RegExp(`[\"\\n\\r${delimitador}]`);
+  if (regex.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+/* =========================
+   DOWNLOADS SEM COLUNAS OPERACIONAIS
+   + CSV em colunas corretas
+   + Datas formatadas
+   + PDF com linhas sem sobreposição
+========================= */
+function formatarDateParaBr(date, incluirHora = false) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const yyyy = String(date.getFullYear());
+
+  if (!incluirHora) {
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+
+  return `${dd}/${mm}/${yyyy} ${hh}:${mi}:${ss}`;
+}
+
+function nomeDeColunaPareceData(nomeColuna) {
+  const n = normalizarTexto(nomeColuna)
+    .replace(/\./g, " ")
+    .replace(/\//g, " ");
+
+  return (
+    n.includes("data") ||
+    n.includes("dia pesq") ||
+    n.includes("dt alteracao") ||
+    n.includes("alteracao")
+  );
+}
+
+function valorPareceSerialExcel(valor) {
+  if (valor === null || valor === undefined || valor === "") return false;
+  if (typeof valor === "number") return valor > 20000 && valor < 80000;
+
+  const texto = String(valor).trim().replace(",", ".");
+  if (!/^\d+(\.\d+)?$/.test(texto)) return false;
+
+  const n = Number(texto);
+  return Number.isFinite(n) && n > 20000 && n < 80000;
+}
+
+function removerColunasOperacionaisDaMatriz(matriz = []) {
+  if (!Array.isArray(matriz) || !matriz.length) return [];
+
+  const cabecalhoOriginal = Array.isArray(matriz[0]) ? matriz[0] : [];
+  const indicesMantidos = [];
+  const novoCabecalho = [];
+
+  cabecalhoOriginal.forEach((coluna, idx) => {
+    if (!familiaColunaOperacional(coluna)) {
+      indicesMantidos.push(idx);
+      novoCabecalho.push(coluna);
+    }
+  });
+
+  const linhas = matriz.slice(1).map((linha) =>
+    indicesMantidos.map((idx, pos) => {
+      const valor = Array.isArray(linha) ? linha[idx] ?? "" : "";
+      const header = novoCabecalho[pos] ?? "";
+      return formatarValorParaPdf(header, valor);
+    })
+  );
+
+  return [novoCabecalho, ...linhas];
+}
+
+function matrizParaCsv(matriz = [], delimitador = ";") {
+  if (!Array.isArray(matriz) || !matriz.length) return "";
+
+  return matriz
+    .map((linha) =>
+      (linha || [])
+        .map((celula) => escCsvComDelimitador(celula ?? "", delimitador))
+        .join(delimitador)
+    )
+    .join("\r\n");
+}
+
+function obterMatrizDownloadComOperacionais(csvOriginal = "") {
+  const matrizOriginal = csvParaMatriz(csvOriginal);
+  if (!matrizOriginal.length) return [];
+
+  const cabecalho = Array.isArray(matrizOriginal[0]) ? matrizOriginal[0] : [];
+  const linhas = matrizOriginal.slice(1).map((linha) =>
+    cabecalho.map((coluna, idx) => {
+      const valor = Array.isArray(linha) ? linha[idx] ?? "" : "";
+      return formatarValorParaDownload(coluna, valor);
+    })
+  );
+
+  return [cabecalho, ...linhas];
+}
+
+function gerarCsvDownloadComOperacionais(csvOriginal = "") {
+  const matriz = obterMatrizDownloadComOperacionais(csvOriginal);
+  if (!matriz.length) return "";
+  return matrizParaCsv(matriz, ";");
+}
+
+function gerarCsvDownloadSemOperacionais(csvOriginal = "") {
+  const matrizOriginal = csvParaMatriz(csvOriginal);
+  if (!matrizOriginal.length) return "";
+
+  const matrizLimpa = removerColunasOperacionaisDaMatriz(matrizOriginal);
+  return matrizParaCsv(matrizLimpa, ";");
+}
+
+function obterMatrizDownloadSemOperacionais(csvOriginal = "") {
+  const matrizOriginal = csvParaMatriz(csvOriginal);
+  if (!matrizOriginal.length) return [];
+  return removerColunasOperacionaisDaMatriz(matrizOriginal);
+}
+
+function baixarCsvItem(item) {
+  const nome = nomeArquivoDaParte(item, "csv");
+  const csvComOperacionais = gerarCsvDownloadComOperacionais(item?.csv || "");
+  const conteudoFinal = "\uFEFF" + csvComOperacionais;
+  const blob = new Blob([conteudoFinal], { type: "text/csv;charset=utf-8;" });
+  baixarBlobComoArquivo(blob, nome);
+}
+
 function abrirJanelaImpressaoPdf(item) {
-  const matriz = csvParaMatriz(item?.csv || "");
+  const matriz = obterMatrizDownloadSemOperacionais(item?.csv || "");
   if (!matriz.length) {
     throw new Error("Não há dados para gerar o PDF.");
   }
@@ -584,9 +866,13 @@ function abrirJanelaImpressaoPdf(item) {
       <meta charset="UTF-8" />
       <title>${escaparHtml(nome)}</title>
       <style>
+        @page {
+          size: portrait;
+          margin: 10mm;
+        }
         body{
           font-family: Arial, Helvetica, sans-serif;
-          margin: 16px;
+          margin: 0;
           color:#111;
         }
         h1{
@@ -601,17 +887,19 @@ function abrirJanelaImpressaoPdf(item) {
         table{
           width:100%;
           border-collapse:collapse;
-          table-layout:auto;
-          font-size:9px;
+          table-layout:fixed;
+          font-size:10px;
         }
         th,td{
           border:1px solid #999;
-          padding:4px 5px;
+          padding:5px 6px;
           text-align:left;
           vertical-align:top;
           word-break:break-word;
+          white-space:normal;
+          line-height:1.35;
         }
-        thead{
+        th{
           background:#eee;
         }
       </style>
@@ -647,7 +935,7 @@ function abrirJanelaImpressaoPdf(item) {
 
 async function baixarPdfItem(item) {
   const nome = nomeArquivoDaParte(item, "pdf");
-  const matriz = csvParaMatriz(item?.csv || "");
+  const matriz = obterMatrizDownloadSemOperacionais(item?.csv || "");
 
   if (!matriz.length) {
     throw new Error("Não há dados para gerar o PDF.");
@@ -682,41 +970,75 @@ async function baixarPdfItem(item) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
       doc.text(`Parte: ${item?.labelVisivel || item?.labelParte || item?.chaveParte || "—"}`, margemX, y);
+
       y += 12;
+      doc.text(`Gerado em: ${obterDataHoraBr()}`, margemX, y);
       y += 18;
 
       const colCount = Math.max(headers.length, 1);
       const colWidth = larguraUtil / colCount;
-      const lineHeight = 12;
+      const paddingX = 3;
+      const paddingY = 4;
+      const minLineHeight = 10;
 
-      const desenharCabecalho = () => {
-        doc.setFont("helvetica", "bold");
-        headers.forEach((header, idx) => {
-          const x = margemX + (idx * colWidth);
-          doc.rect(x, y - 9, colWidth, lineHeight);
-          doc.text(String(header ?? "").slice(0, 20), x + 2, y);
-        });
-        y += lineHeight;
-        doc.setFont("helvetica", "normal");
-      };
+      function quebrarTexto(valor, largura) {
+        const texto = String(valor ?? "");
+        return doc.splitTextToSize(texto, Math.max(largura - paddingX * 2, 8));
+      }
+
+      function alturaDaLinha(celulasQuebradas) {
+        let maxLinhas = 1;
+        for (const linhas of celulasQuebradas) {
+          maxLinhas = Math.max(maxLinhas, Array.isArray(linhas) ? linhas.length : 1);
+        }
+        return (maxLinhas * minLineHeight) + (paddingY * 2);
+      }
+
+      function desenharLinha(celulasQuebradas, altura, isHeader = false) {
+        let x = margemX;
+
+        if (isHeader) {
+          doc.setFont("helvetica", "bold");
+        } else {
+          doc.setFont("helvetica", "normal");
+        }
+
+        for (let i = 0; i < celulasQuebradas.length; i++) {
+          const linhasTexto = celulasQuebradas[i];
+          doc.rect(x, y, colWidth, altura);
+
+          const linhasArr = Array.isArray(linhasTexto) ? linhasTexto : [String(linhasTexto ?? "")];
+          for (let j = 0; j < linhasArr.length; j++) {
+            const textoLinha = String(linhasArr[j] ?? "");
+            const textoY = y + paddingY + 8 + (j * minLineHeight);
+            doc.text(textoLinha, x + paddingX, textoY);
+          }
+
+          x += colWidth;
+        }
+
+        y += altura;
+      }
+
+      function desenharCabecalho() {
+        const headerQuebrado = headers.map((h) => quebrarTexto(h, colWidth));
+        const altura = alturaDaLinha(headerQuebrado);
+        desenharLinha(headerQuebrado, altura, true);
+      }
 
       desenharCabecalho();
 
       for (const row of rows) {
-        if (y > pageHeight - 30) {
+        const celulasQuebradas = headers.map((_, idx) => quebrarTexto(row[idx] ?? "", colWidth));
+        const altura = alturaDaLinha(celulasQuebradas);
+
+        if (y + altura > pageHeight - 24) {
           doc.addPage();
           y = margemY;
           desenharCabecalho();
         }
 
-        headers.forEach((_, idx) => {
-          const x = margemX + (idx * colWidth);
-          const valor = String(row[idx] ?? "").slice(0, 20);
-          doc.rect(x, y - 9, colWidth, lineHeight);
-          doc.text(valor, x + 2, y);
-        });
-
-        y += lineHeight;
+        desenharLinha(celulasQuebradas, altura, false);
       }
 
       doc.save(nome);
@@ -730,7 +1052,7 @@ async function baixarPdfItem(item) {
 }
 
 function baixarCsvDireto(nomeArquivo, conteudo) {
-  const blob = new Blob([conteudo], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob(["\uFEFF" + conteudo], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
 
   const link = document.createElement("a");
@@ -755,7 +1077,8 @@ async function baixarTodasAsPartesGeraisCsv() {
   for (let i = 0; i < partesGeradas.length; i++) {
     const parte = partesGeradas[i];
     const nome = nomeArquivoDaParte(parte, "csv");
-    baixarCsvDireto(nome, parte.csv || "");
+    const csvComOperacionais = gerarCsvDownloadComOperacionais(parte.csv || "");
+    baixarCsvDireto(nome, csvComOperacionais);
     await new Promise((resolve) => setTimeout(resolve, 800));
   }
 }
@@ -1554,19 +1877,6 @@ function listaGeoAtiva(colunasVisiveis) {
 /* =========================
    NORMALIZAÇÃO DAS COLUNAS OPERACIONAIS
 ========================= */
-function normalizarNomeColunaControle(chave) {
-  return String(chave || "")
-    .replace(/^\uFEFF/, "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toUpperCase()
-    .replace(/[.\-\/\\]/g, "_")
-    .replace(/\s+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
-
 function familiaColunaOperacional(chave) {
   const n = normalizarNomeColunaControle(chave).replace(/_\d+$/, "");
 
@@ -1671,6 +1981,17 @@ function consolidarColunasOperacionais(linhas) {
   return (linhas || []).map((linha) => consolidarLinhaOperacional(linha));
 }
 
+function normalizarLinhaParaCsvFinal(linha, cabecalhoFinal) {
+  const out = {};
+
+  for (const col of cabecalhoFinal) {
+    const valor = linha?.[col] ?? "";
+    out[col] = formatarValorParaDownload(col, valor);
+  }
+
+  return out;
+}
+
 function gerarCsvDaParte(linhas) {
   const linhasNorm = consolidarColunasOperacionais(linhas || []);
   if (!linhasNorm.length) return "";
@@ -1687,7 +2008,8 @@ function gerarCsvDaParte(linhas) {
   linhasCsv.push(cabecalhoFinal.map(escCsv).join(","));
 
   for (const linha of linhasNorm) {
-    const row = cabecalhoFinal.map((col) => escCsv(linha?.[col] ?? ""));
+    const linhaFormatada = normalizarLinhaParaCsvFinal(linha, cabecalhoFinal);
+    const row = cabecalhoFinal.map((col) => escCsv(linhaFormatada?.[col] ?? ""));
     linhasCsv.push(row.join(","));
   }
 
@@ -2348,16 +2670,26 @@ async function carregarArquivoPorKey(arquivoKey) {
 }
 
 async function lerExcelParaJson(blobExcel) {
-  if (!window.XLSX) throw new Error("SheetJS (XLSX) não carregou. Verifique a tag script do CDN.");
+  if (!window.XLSX) {
+    throw new Error("SheetJS (XLSX) não carregou. Verifique a tag script do CDN.");
+  }
 
   const arrayBuffer = await blobExcel.arrayBuffer();
-  const workbook = window.XLSX.read(arrayBuffer, { type: "array" });
+  const workbook = window.XLSX.read(arrayBuffer, {
+    type: "array",
+    cellDates: false,
+    cellText: false
+  });
 
   const nomePrimeiraAba = workbook.SheetNames[0];
   const ws = workbook.Sheets[nomePrimeiraAba];
   if (!ws) throw new Error("Não consegui ler a primeira aba do Excel.");
 
-  return window.XLSX.utils.sheet_to_json(ws, { defval: "" });
+  return window.XLSX.utils.sheet_to_json(ws, {
+    defval: "",
+    raw: false,
+    dateNF: "dd/mm/yyyy"
+  });
 }
 
 /* =========================
@@ -2478,7 +2810,7 @@ function normalizarNumeroPesquisa(v) {
 }
 
 function normalizarDataPesquisa(v) {
-  return String(v || "").trim().replaceAll("/", "-");
+  return String(v || "").trim().replace(/\//g, "-");
 }
 
 function dataPesquisaValida(v) {
