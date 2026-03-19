@@ -34,7 +34,7 @@
     <section class="cabecalhoPainel">
       <h1 class="tituloPagina">Arquivos Recebidos</h1>
       <p class="subtituloPagina">
-        Visualize e baixe os arquivos recebidos do banco via n8n. As <strong>partes</strong> aparecem quando forem
+        Visualize e baixe os arquivos. As <strong>partes</strong> aparecem quando forem
         detectadas pelo campo <code>Nº PESQ.</code>.
       </p>
     </section>
@@ -80,19 +80,14 @@
     <div class="dialogTopo">
       <div class="dialogTopoTxt">
         <h3 id="modalVerTitulo" class="tituloModal">Ver arquivo</h3>
-        <p id="modalVerSub" class="mensagemModal">Prévia das primeiras linhas.</p>
+        <p id="modalVerSub" class="mensagemModal">Relatório consolidado do arquivo.</p>
       </div>
 
       <button id="btnFecharVer" class="botaoSecundario" type="button">Fechar</button>
     </div>
 
     <div class="dialogConteudo">
-      <div class="tabelaPreviewWrap">
-        <table class="tabelaPreview" aria-label="Prévia CSV">
-          <thead id="previewHead"></thead>
-          <tbody id="previewBody"></tbody>
-        </table>
-      </div>
+      <div id="relatorioVer" class="relatorioWrap"></div>
     </div>
   </dialog>
 

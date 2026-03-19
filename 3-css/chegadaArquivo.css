@@ -249,7 +249,7 @@
    DIALOG (MODAL)
 ========================= */
 .dialogBase {
-  width: min(1100px, calc(100% - 28px));
+  width: min(1180px, calc(100% - 28px));
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--surface-2);
@@ -263,7 +263,7 @@
   transform: translate(-50%, -50%) !important;
   margin: 0 !important;
 
-  max-height: min(78vh, 820px);
+  max-height: min(84vh, 900px);
   overflow: hidden;
 }
 
@@ -313,7 +313,7 @@
 .dialogConteudo {
   padding: 14px;
   overflow: auto;
-  max-height: calc(min(78vh, 820px) - 56px);
+  max-height: calc(min(84vh, 900px) - 70px);
 }
 
 /* =========================
@@ -351,6 +351,137 @@
 }
 
 /* =========================
+   RELATÓRIO DO BOTÃO VER
+========================= */
+.relatorioWrap {
+  display: grid;
+  gap: 14px;
+}
+
+.relatorioCards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.cardResumo {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: var(--shadow);
+}
+
+.cardResumoTitulo {
+  margin: 0 0 6px 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.cardResumoValor {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.blocoRelatorio {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.blocoRelatorioTopo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.blocoRelatorioTitulo {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.blocoRelatorioSub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tabelaRelatorioWrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-width: 100%;
+}
+
+.tabelaRelatorio {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.tabelaRelatorio th,
+.tabelaRelatorio td {
+  padding: 10px 8px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+  color: var(--text);
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.tabelaRelatorio th {
+  background: var(--surface-2);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-weight: 900;
+}
+
+.tabelaRelatorio th.colPesquisador,
+.tabelaRelatorio td.colPesquisador {
+  text-align: left;
+  width: 110px;
+  min-width: 110px;
+  max-width: 110px;
+  font-weight: 900;
+}
+
+.tabelaRelatorio th.colTotal,
+.tabelaRelatorio td.colTotal {
+  width: 90px;
+  min-width: 90px;
+  max-width: 90px;
+  font-weight: 800;
+}
+
+.tabelaRelatorio th.colStatus,
+.tabelaRelatorio td.colStatus {
+  min-width: 78px;
+}
+
+.relatorioVazio {
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 18px;
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--surface);
+}
+
+/* =========================
    PARTES (grid)
 ========================= */
 .gridPartes {
@@ -363,6 +494,14 @@
 @media (max-width: 920px) {
   .gridPartes {
     grid-template-columns: 1fr;
+  }
+
+  .relatorioCards {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+
+  .tabelaRelatorio {
+    min-width: 780px;
   }
 }
 

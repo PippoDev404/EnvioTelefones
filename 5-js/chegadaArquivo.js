@@ -25,8 +25,7 @@ const modalVer = document.getElementById("modalVer");
 const btnFecharVer = document.getElementById("btnFecharVer");
 const modalVerTitulo = document.getElementById("modalVerTitulo");
 const modalVerSub = document.getElementById("modalVerSub");
-const previewHead = document.getElementById("previewHead");
-const previewBody = document.getElementById("previewBody");
+const relatorioVer = document.getElementById("relatorioVer");
 
 // modal partes
 const modalPartes = document.getElementById("modalPartes");
@@ -50,14 +49,12 @@ const txtExcluirNome = document.getElementById("txtExcluirNome");
 // ======================
 // STATE
 // ======================
-let arquivosAtuais = [];          // [{ arquivoKey, nome, atualizadoEm, csv, raw, ownerId }]
-let arquivoSelecionadoKey = null; // arquivoKey
-let partesDoArquivo = [];         // [{key, nome, csv}]
+let arquivosAtuais = [];
+let arquivoSelecionadoKey = null;
+let partesDoArquivo = [];
 let isLoading = false;
 let realtimeChannel = null;
-
-// estado exclusão
-let excluirPendente = null; // { arquivoKey, nome, ownerId }
+let excluirPendente = null;
 
 init();
 
@@ -134,7 +131,7 @@ function bind() {
 }
 
 // ======================
-// FETCH SUPABASE (GET)
+// FETCH SUPABASE
 // ======================
 async function carregarTudo(mostrarPrimeiraVez = false) {
   if (isLoading) return;
@@ -204,10 +201,7 @@ function iniciarRealtime() {
       async (payload) => {
         const row = payload?.new || payload?.old || {};
         const rowOwnerId = String(row.owner_id ?? "").trim();
-
-        // Evita recarregar por alterações de outros usuários
         if (rowOwnerId && rowOwnerId !== ownerId) return;
-
         await carregarTudo(false);
       }
     )
@@ -317,7 +311,7 @@ function aplicarFiltros() {
 }
 
 // ======================
-// EXCLUIR (SUPABASE)
+// EXCLUIR
 // ======================
 function abrirModalExcluir(arquivoKey) {
   const arq = arquivosAtuais.find((x) => String(x.arquivoKey) === String(arquivoKey));
@@ -383,21 +377,384 @@ function removerDaListaLocal(arquivoKey) {
   }
 }
 
+// ======================
+// VER ARQUIVO = RELATÓRIO
+// ======================
 function verArquivoLocal(arquivoKey) {
-  limparPreviewMaster();
+  limparRelatorioMaster();
 
   const arq = arquivosAtuais.find((x) => String(x.arquivoKey) === String(arquivoKey));
   if (!arq) return;
 
-  if (modalVerTitulo) modalVerTitulo.textContent = `Ver: ${arq.nome || arq.arquivoKey}`;
-  if (modalVerSub) modalVerSub.textContent = "Prévia (20 linhas). Cada vírgula (,) é uma coluna.";
+  if (modalVerTitulo) modalVerTitulo.textContent = `Relatório: ${arq.nome || arq.arquivoKey}`;
 
-  const { headers, rows } = csvPreview(arq.csv || "", 20);
-  renderTabela(previewHead, previewBody, headers, rows);
+  const relatorio = gerarRelatorioCsv(arq.csv || "");
 
+  if (modalVerSub) {
+    modalVerSub.textContent =
+      `Total de registros: ${formatarNumero(relatorio.totais.totalRegistros)} • ` +
+      `Coluna de status: ${relatorio.nomeColunaStatus || "não identificada"} • ` +
+      `Coluna de parte: ${relatorio.nomeColunaParte || "não identificada"}`;
+  }
+
+  renderRelatorioArquivo(relatorio);
   abrirDialog(modalVer);
 }
 
+function renderRelatorioArquivo(relatorio) {
+  if (!relatorioVer) return;
+
+  if (!relatorio || !relatorio.totais) {
+    relatorioVer.innerHTML = `<div class="relatorioVazio">Não foi possível gerar o relatório deste arquivo.</div>`;
+    return;
+  }
+
+  const totais = relatorio.totais;
+  const statusGeralRows = relatorio.statusGeralRows || [];
+  const tabelaPorPesquisador = relatorio.tabelaPesquisadores || [];
+  const statusColumns = relatorio.statusColumns || [];
+
+  const cardsHtml = `
+    <div class="relatorioCards">
+      <div class="cardResumo">
+        <p class="cardResumoTitulo">Total de números</p>
+        <p class="cardResumoValor">${formatarNumero(totais.totalRegistros)}</p>
+      </div>
+      <div class="cardResumo">
+        <p class="cardResumoTitulo">Quantidade de ligações feitas</p>
+        <p class="cardResumoValor">${formatarNumero(totais.tratados)}</p>
+      </div>
+      <div class="cardResumo">
+        <p class="cardResumoTitulo">Pendentes</p>
+        <p class="cardResumoValor">${formatarNumero(totais.pendentes)}</p>
+      </div>
+      <div class="cardResumo">
+        <p class="cardResumoTitulo">Quantidade de Pesquisadores</p>
+        <p class="cardResumoValor">${formatarNumero(relatorio.quantidadePesquisadores)}</p>
+      </div>
+    </div>
+  `;
+
+  const statusGeralHtml = `
+    <section class="blocoRelatorio">
+      <div class="blocoRelatorioTopo">
+        <div>
+          <h4 class="blocoRelatorioTitulo">Resumo geral por status</h4>
+          <p class="blocoRelatorioSub">Contagem consolidada de todos os status encontrados no arquivo.</p>
+        </div>
+      </div>
+
+      <div class="tabelaRelatorioWrap">
+        <table class="tabelaRelatorio" aria-label="Resumo geral por status">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th class="colTotal">Quantidade</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              statusGeralRows.length
+                ? statusGeralRows.map((item) => `
+                  <tr>
+                    <td style="text-align:left;">${escapeHtml(item.status)}</td>
+                    <td class="colTotal">${formatarNumero(item.quantidade)}</td>
+                  </tr>
+                `).join("")
+                : `
+                  <tr>
+                    <td colspan="2">Nenhum status encontrado.</td>
+                  </tr>
+                `
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+
+  const pesquisadoresHtml = `
+    <section class="blocoRelatorio">
+      <div class="blocoRelatorioTopo">
+        <div>
+          <h4 class="blocoRelatorioTitulo">Resumo por pesquisador</h4>
+          <p class="blocoRelatorioSub">Cada linha representa um pesquisador (P) e cada coluna representa um status.</p>
+        </div>
+      </div>
+
+      <div class="tabelaRelatorioWrap">
+        <table class="tabelaRelatorio" aria-label="Resumo por pesquisador e status">
+          <thead>
+            <tr>
+              <th class="colPesquisador">Pesquisador</th>
+              <th class="colTotal">Total</th>
+              ${statusColumns.map((status) => `<th class="colStatus">${escapeHtml(status)}</th>`).join("")}
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              tabelaPorPesquisador.length
+                ? tabelaPorPesquisador.map((linha) => `
+                  <tr>
+                    <td class="colPesquisador">${escapeHtml(linha.parte)}</td>
+                    <td class="colTotal">${formatarNumero(linha.total)}</td>
+                    ${statusColumns.map((status) => `<td class="colStatus">${formatarNumero(linha.statuses?.[status] || 0)}</td>`).join("")}
+                  </tr>
+                `).join("")
+                : `
+                  <tr>
+                    <td colspan="${2 + statusColumns.length}">Nenhum pesquisador identificado.</td>
+                  </tr>
+                `
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+
+  relatorioVer.innerHTML = `${cardsHtml}${statusGeralHtml}${pesquisadoresHtml}`;
+}
+
+function gerarRelatorioCsv(csvText) {
+  const linhas = String(csvText || "").split("\n").filter((l) => l.trim().length > 0);
+
+  if (linhas.length < 2) {
+    return {
+      nomeColunaStatus: null,
+      nomeColunaParte: null,
+      quantidadePesquisadores: 0,
+      totais: {
+        totalRegistros: 0,
+        tratados: 0,
+        pendentes: 0,
+      },
+      statusGeralRows: [],
+      statusColumns: [],
+      tabelaPesquisadores: [],
+    };
+  }
+
+  const headers = parseCsvLine(linhas[0]);
+  const dados = linhas.slice(1).map(parseCsvLine);
+
+  const idxStatus = encontrarIndiceColuna(headers, [
+    "status",
+    "status final",
+    "status ligação",
+    "status ligacao",
+    "situação",
+    "situacao",
+    "resultado",
+    "resultado final",
+  ]);
+
+  const idxParte = encontrarIndiceColuna(headers, [
+    "nº pesq.",
+    "n° pesq.",
+    "no pesq.",
+    "num pesq",
+    "numero pesq",
+    "n pesq",
+    "pesq",
+  ]);
+
+  const nomeColunaStatus = idxStatus >= 0 ? String(headers[idxStatus] || "") : null;
+  const nomeColunaParte = idxParte >= 0 ? String(headers[idxParte] || "") : null;
+
+  const totais = {
+    totalRegistros: 0,
+    tratados: 0,
+    pendentes: 0,
+  };
+
+  const statusGeralMap = new Map();
+  const partesMap = new Map();
+  const statusSet = new Set();
+
+  for (const row of dados) {
+    totais.totalRegistros += 1;
+
+    const statusRaw = idxStatus >= 0 ? limparCampoCsv(row[idxStatus] ?? "") : "";
+    const parteRaw = idxParte >= 0 ? limparCampoCsv(row[idxParte] ?? "") : "";
+
+    const parteKey = normalizarParteKey(parteRaw) || "SEM PARTE";
+    const statusInfo = classificarStatus(statusRaw);
+
+    if (!partesMap.has(parteKey)) {
+      partesMap.set(parteKey, {
+        parte: parteKey,
+        total: 0,
+        statuses: {},
+      });
+    }
+
+    const parte = partesMap.get(parteKey);
+    parte.total += 1;
+
+    if (statusInfo.tipo === "pendente") {
+      totais.pendentes += 1;
+    } else if (statusInfo.tipo !== "sem_status") {
+      totais.tratados += 1;
+    }
+
+    if (statusInfo.tipo !== "sem_status") {
+      incrementarMapaContagem(statusGeralMap, statusInfo.label, 1);
+      parte.statuses[statusInfo.label] = Number(parte.statuses[statusInfo.label] || 0) + 1;
+      statusSet.add(statusInfo.label);
+    }
+  }
+
+  const statusColumns = [...statusSet]
+    .sort((a, b) => {
+      const qa = Number(statusGeralMap.get(a) || 0);
+      const qb = Number(statusGeralMap.get(b) || 0);
+      if (qb !== qa) return qb - qa;
+      return a.localeCompare(b, "pt-BR");
+    })
+    .map(formatarNomeStatusExibicao);
+
+  const tabelaPesquisadores = [...partesMap.values()]
+    .sort((a, b) => ordenarPartes(a.parte, b.parte))
+    .map((item) => {
+      const statuses = {};
+      for (const statusBruto of [...statusSet]) {
+        const nomeExibicao = formatarNomeStatusExibicao(statusBruto);
+        statuses[nomeExibicao] = Number(item.statuses[statusBruto] || 0);
+      }
+      return {
+        parte: item.parte,
+        total: item.total,
+        statuses,
+      };
+    });
+
+  return {
+    nomeColunaStatus,
+    nomeColunaParte,
+    quantidadePesquisadores: tabelaPesquisadores.length,
+    totais,
+    statusGeralRows: mapContagemParaRows(statusGeralMap).map((item) => ({
+      ...item,
+      status: formatarNomeStatusExibicao(item.status),
+    })),
+    statusColumns,
+    tabelaPesquisadores,
+  };
+}
+
+function classificarStatus(statusRaw) {
+  const original = String(statusRaw || "").trim();
+  const norm = normalizarTexto(original);
+
+  if (!norm) {
+    return {
+      tipo: "sem_status",
+      label: "Sem status",
+    };
+  }
+
+  if (
+    norm.includes("pendente") ||
+    norm === "pend" ||
+    norm.includes("aguardando")
+  ) {
+    return {
+      tipo: "pendente",
+      label: original,
+    };
+  }
+
+  return {
+    tipo: "tratado",
+    label: original,
+  };
+}
+
+function formatarNomeStatusExibicao(status) {
+  const bruto = String(status || "").trim();
+  if (!bruto) return "Sem status";
+
+  const normalizado = normalizarTexto(bruto).replace(/\s+/g, "_");
+
+  const mapaFixos = {
+    pendente: "Pendente",
+    pesquisa_feita: "Pesquisa feita",
+    retorno: "Retorno",
+    nao_atendeu: "Não atendeu/caixa postal",
+    nao_pode_fazer_pesquisa: "Não pode fazer pesquisa",
+    numero_nao_existe: "N° não existe/ n° bloqueado",
+    outra_cidade: "Outra cidade",
+    recusa: "Recusa",
+    remover_da_lista: "Remover da lista",
+    sem_status: "Sem status",
+  };
+
+  if (mapaFixos[normalizado]) {
+    return mapaFixos[normalizado];
+  }
+
+  return bruto
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letra) => letra.toUpperCase());
+}
+
+function encontrarIndiceColuna(headers, candidatos = []) {
+  const normHeaders = (headers || []).map((h) => normalizarTexto(h));
+
+  for (const candidato of candidatos) {
+    const normCand = normalizarTexto(candidato);
+    const idxExato = normHeaders.findIndex((h) => h === normCand);
+    if (idxExato >= 0) return idxExato;
+  }
+
+  for (const candidato of candidatos) {
+    const normCand = normalizarTexto(candidato);
+    const idxParcial = normHeaders.findIndex((h) => h.includes(normCand));
+    if (idxParcial >= 0) return idxParcial;
+  }
+
+  return -1;
+}
+
+function incrementarMapaContagem(mapa, chave, valor = 1) {
+  const key = String(chave || "").trim() || "Sem status";
+  mapa.set(key, Number(mapa.get(key) || 0) + Number(valor || 0));
+}
+
+function mapContagemParaRows(mapa) {
+  return [...(mapa?.entries() || [])]
+    .map(([status, quantidade]) => ({
+      status: String(status || ""),
+      quantidade: Number(quantidade || 0),
+    }))
+    .sort((a, b) => {
+      if (b.quantidade !== a.quantidade) return b.quantidade - a.quantidade;
+      return a.status.localeCompare(b.status, "pt-BR");
+    });
+}
+
+function ordenarPartes(a, b) {
+  const pa = extrairNumeroParte(a);
+  const pb = extrairNumeroParte(b);
+
+  if (pa !== null && pb !== null) return pa - pb;
+  if (pa !== null) return -1;
+  if (pb !== null) return 1;
+
+  return String(a || "").localeCompare(String(b || ""), "pt-BR");
+}
+
+function extrairNumeroParte(nome) {
+  const m = String(nome || "").match(/^P(\d{1,3})$/i);
+  if (!m) return null;
+  return Number(m[1]);
+}
+
+// ======================
+// DOWNLOAD / PARTES
+// ======================
 function baixarArquivoLocal(arquivoKey) {
   const arq = arquivosAtuais.find((x) => String(x.arquivoKey) === String(arquivoKey));
   if (!arq || !window.XLSX) return;
@@ -472,6 +829,9 @@ function baixarParteLocal(arquivoKey, parteKey, forcedName = null) {
   salvarXlsxComoArquivoCsv(parte.csv || "", filename);
 }
 
+// ======================
+// HELPERS CSV
+// ======================
 function garantirTexto(txt) {
   return String(txt || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
@@ -566,7 +926,7 @@ function gerarPartesDoCsv(csvText, nomeColunaParte = "Nº PESQ.") {
   }
 
   return [...mapa.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
+    .sort((a, b) => a[0].localeCompare(b[0], "pt-BR"))
     .map(([key, lines]) => ({
       key,
       nome: key,
@@ -654,9 +1014,11 @@ function renderTabela(elHead, elBody, headers, rows) {
   });
 }
 
-function limparPreviewMaster() {
-  if (previewHead) previewHead.innerHTML = "";
-  if (previewBody) previewBody.innerHTML = "";
+// ======================
+// UI HELPERS
+// ======================
+function limparRelatorioMaster() {
+  if (relatorioVer) relatorioVer.innerHTML = "";
 }
 
 function limparPreviewParte() {
@@ -719,6 +1081,10 @@ function formatarData(iso) {
   } catch {
     return String(iso);
   }
+}
+
+function formatarNumero(valor) {
+  return Number(valor || 0).toLocaleString("pt-BR");
 }
 
 function hashLista(lista) {
