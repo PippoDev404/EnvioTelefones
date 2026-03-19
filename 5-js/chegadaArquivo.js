@@ -20,14 +20,12 @@ const txtTotal = document.getElementById("txtTotal");
 const corpoTabelaArquivos = document.getElementById("corpoTabelaArquivos");
 const estadoVazio = document.getElementById("estadoVazio");
 
-// modal ver
 const modalVer = document.getElementById("modalVer");
 const btnFecharVer = document.getElementById("btnFecharVer");
 const modalVerTitulo = document.getElementById("modalVerTitulo");
 const modalVerSub = document.getElementById("modalVerSub");
 const relatorioVer = document.getElementById("relatorioVer");
 
-// modal partes
 const modalPartes = document.getElementById("modalPartes");
 const btnFecharPartes = document.getElementById("btnFecharPartes");
 const modalPartesTitulo = document.getElementById("modalPartesTitulo");
@@ -38,7 +36,6 @@ const nomeDownloadParte = document.getElementById("nomeDownloadParte");
 const parteHead = document.getElementById("parteHead");
 const parteBody = document.getElementById("parteBody");
 
-// modal excluir
 const modalExcluir = document.getElementById("modalExcluir");
 const btnFecharExcluir = document.getElementById("btnFecharExcluir");
 const btnCancelarExcluir = document.getElementById("btnCancelarExcluir");
@@ -56,6 +53,9 @@ let isLoading = false;
 let realtimeChannel = null;
 let excluirPendente = null;
 
+let relatorioAtualBase = null;
+let pesquisadoresSelecionados = new Set();
+
 init();
 
 async function init() {
@@ -72,7 +72,11 @@ function bind() {
     aplicarFiltros();
   });
 
-  btnFecharVer?.addEventListener("click", () => fecharDialog(modalVer));
+  btnFecharVer?.addEventListener("click", () => {
+    relatorioAtualBase = null;
+    pesquisadoresSelecionados = new Set();
+    fecharDialog(modalVer);
+  });
 
   btnFecharPartes?.addEventListener("click", () => {
     limparPreviewParte();
@@ -111,7 +115,19 @@ function bind() {
       fecharDialog(modalPartes);
     }
 
-    if (modalVer?.open) fecharDialog(modalVer);
+    if (modalVer?.open) {
+      fecharDropdownPesquisadores();
+      relatorioAtualBase = null;
+      pesquisadoresSelecionados = new Set();
+      fecharDialog(modalVer);
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    const dentroDoDropdown = e.target.closest?.(".selectPesquisadoresWrap");
+    if (!dentroDoDropdown) {
+      fecharDropdownPesquisadores();
+    }
   });
 
   modalExcluir?.addEventListener("click", (e) => {
@@ -388,20 +404,34 @@ function verArquivoLocal(arquivoKey) {
 
   if (modalVerTitulo) modalVerTitulo.textContent = `Relatório: ${arq.nome || arq.arquivoKey}`;
 
-  const relatorio = gerarRelatorioCsv(arq.csv || "");
+  relatorioAtualBase = gerarRelatorioCsv(arq.csv || "");
+  pesquisadoresSelecionados = new Set(
+    (relatorioAtualBase?.tabelaPesquisadores || []).map((item) => item.parte)
+  );
 
-  if (modalVerSub) {
-    modalVerSub.textContent =
-      `Total de registros: ${formatarNumero(relatorio.totais.totalRegistros)} • ` +
-      `Coluna de status: ${relatorio.nomeColunaStatus || "não identificada"} • ` +
-      `Coluna de parte: ${relatorio.nomeColunaParte || "não identificada"}`;
-  }
-
-  renderRelatorioArquivo(relatorio);
+  atualizarRelatorioFiltrado();
   abrirDialog(modalVer);
 }
 
-function renderRelatorioArquivo(relatorio) {
+function atualizarRelatorioFiltrado() {
+  if (!relatorioAtualBase) return;
+
+  const relatorioFiltrado = gerarRelatorioFiltrado(
+    relatorioAtualBase,
+    pesquisadoresSelecionados
+  );
+
+  if (modalVerSub) {
+    modalVerSub.textContent =
+      `Total de registros: ${formatarNumero(relatorioFiltrado.totais.totalRegistros)} • ` +
+      `Coluna de status: ${relatorioAtualBase.nomeColunaStatus || "não identificada"} • ` +
+      `Coluna de parte: ${relatorioAtualBase.nomeColunaParte || "não identificada"}`;
+  }
+
+  renderRelatorioArquivo(relatorioFiltrado, relatorioAtualBase, pesquisadoresSelecionados);
+}
+
+function renderRelatorioArquivo(relatorio, relatorioBase, selecionadosSet) {
   if (!relatorioVer) return;
 
   if (!relatorio || !relatorio.totais) {
@@ -413,6 +443,8 @@ function renderRelatorioArquivo(relatorio) {
   const statusGeralRows = relatorio.statusGeralRows || [];
   const tabelaPorPesquisador = relatorio.tabelaPesquisadores || [];
   const statusColumns = relatorio.statusColumns || [];
+  const pesquisadoresBase = relatorioBase?.tabelaPesquisadores || [];
+  const totalSelecionados = pesquisadoresBase.filter((item) => selecionadosSet.has(item.parte)).length;
 
   const cardsHtml = `
     <div class="relatorioCards">
@@ -421,7 +453,7 @@ function renderRelatorioArquivo(relatorio) {
         <p class="cardResumoValor">${formatarNumero(totais.totalRegistros)}</p>
       </div>
       <div class="cardResumo">
-        <p class="cardResumoTitulo">Quantidade de ligações feitas</p>
+        <p class="cardResumoTitulo">Tratados</p>
         <p class="cardResumoValor">${formatarNumero(totais.tratados)}</p>
       </div>
       <div class="cardResumo">
@@ -430,9 +462,56 @@ function renderRelatorioArquivo(relatorio) {
       </div>
       <div class="cardResumo">
         <p class="cardResumoTitulo">Quantidade de Pesquisadores</p>
-        <p class="cardResumoValor">${formatarNumero(relatorio.quantidadePesquisadores)}</p>
+        <p class="cardResumoValor">${formatarNumero(totalSelecionados)}</p>
       </div>
     </div>
+  `;
+
+  const filtroHtml = `
+    <section class="filtroPesquisadores">
+      <div class="filtroPesquisadoresTopo">
+        <div>
+          <h4 class="filtroPesquisadoresTitulo">Filtro de pesquisadores</h4>
+          <p class="filtroPesquisadoresSub">
+            Remova pesquisadores da soma e das tabelas usando o seletor abaixo.
+          </p>
+        </div>
+      </div>
+
+      <div class="selectPesquisadoresWrap">
+        <button type="button" class="botaoSelectPesquisadores" id="btnAbrirSelectPesquisadores">
+          <span>${montarTextoResumoSelecionados(pesquisadoresBase, selecionadosSet)}</span>
+          <i class="fa-solid fa-chevron-down"></i>
+        </button>
+
+        <div class="dropdownPesquisadores" id="dropdownPesquisadores" hidden>
+          <div class="dropdownPesquisadoresTopo">
+            <button class="botaoMini" type="button" data-filtro-p="todos">Selecionar todos</button>
+            <button class="botaoMini" type="button" data-filtro-p="nenhum">Limpar todos</button>
+          </div>
+
+          <div class="dropdownPesquisadoresLista">
+            ${
+              pesquisadoresBase.length
+                ? pesquisadoresBase.map((item) => {
+                    const checked = selecionadosSet.has(item.parte);
+                    return `
+                      <label class="itemPesquisadorSelect ${checked ? "" : "desmarcado"}">
+                        <input
+                          type="checkbox"
+                          data-pesquisador="${escapeHtml(item.parte)}"
+                          ${checked ? "checked" : ""}
+                        />
+                        <span>${escapeHtml(item.parte)}</span>
+                      </label>
+                    `;
+                  }).join("")
+                : `<div class="relatorioVazio" style="width:100%;">Nenhum pesquisador identificado.</div>`
+            }
+          </div>
+        </div>
+      </div>
+    </section>
   `;
 
   const statusGeralHtml = `
@@ -440,7 +519,7 @@ function renderRelatorioArquivo(relatorio) {
       <div class="blocoRelatorioTopo">
         <div>
           <h4 class="blocoRelatorioTitulo">Resumo geral por status</h4>
-          <p class="blocoRelatorioSub">Contagem consolidada de todos os status encontrados no arquivo.</p>
+          <p class="blocoRelatorioSub">Contagem consolidada dos pesquisadores atualmente selecionados.</p>
         </div>
       </div>
 
@@ -503,7 +582,7 @@ function renderRelatorioArquivo(relatorio) {
                 `).join("")
                 : `
                   <tr>
-                    <td colspan="${2 + statusColumns.length}">Nenhum pesquisador identificado.</td>
+                    <td colspan="${2 + statusColumns.length}">Nenhum pesquisador selecionado.</td>
                   </tr>
                 `
             }
@@ -513,7 +592,100 @@ function renderRelatorioArquivo(relatorio) {
     </section>
   `;
 
-  relatorioVer.innerHTML = `${cardsHtml}${statusGeralHtml}${pesquisadoresHtml}`;
+  relatorioVer.innerHTML = `${cardsHtml}${filtroHtml}${statusGeralHtml}${pesquisadoresHtml}`;
+  bindFiltroPesquisadores();
+}
+
+function bindFiltroPesquisadores() {
+  const btnAbrir = relatorioVer?.querySelector("#btnAbrirSelectPesquisadores");
+  const dropdown = relatorioVer?.querySelector("#dropdownPesquisadores");
+
+  btnAbrir?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!dropdown) return;
+    dropdown.hidden = !dropdown.hidden;
+  });
+
+  relatorioVer?.querySelectorAll('input[data-pesquisador]')?.forEach((input) => {
+    input.addEventListener("click", (e) => e.stopPropagation());
+
+    input.addEventListener("change", (e) => {
+      const checkbox = e.currentTarget;
+      const parte = String(checkbox?.dataset?.pesquisador || "").trim();
+      if (!parte) return;
+
+      if (checkbox.checked) pesquisadoresSelecionados.add(parte);
+      else pesquisadoresSelecionados.delete(parte);
+
+      atualizarRelatorioFiltrado();
+    });
+  });
+
+  relatorioVer?.querySelector('[data-filtro-p="todos"]')?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    pesquisadoresSelecionados = new Set(
+      (relatorioAtualBase?.tabelaPesquisadores || []).map((item) => item.parte)
+    );
+    atualizarRelatorioFiltrado();
+  });
+
+  relatorioVer?.querySelector('[data-filtro-p="nenhum"]')?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    pesquisadoresSelecionados = new Set();
+    atualizarRelatorioFiltrado();
+  });
+}
+
+function fecharDropdownPesquisadores() {
+  const dropdown = document.getElementById("dropdownPesquisadores");
+  if (dropdown) dropdown.hidden = true;
+}
+
+function montarTextoResumoSelecionados(base, selecionadosSet) {
+  const total = Array.isArray(base) ? base.length : 0;
+  const marcados = Array.from(selecionadosSet || []).length;
+
+  if (!total) return "Nenhum pesquisador";
+  if (marcados === total) return `Todos os pesquisadores (${total})`;
+  if (marcados === 0) return "Nenhum pesquisador selecionado";
+  return `${marcados} de ${total} pesquisador(es) selecionado(s)`;
+}
+
+function gerarRelatorioFiltrado(relatorioBase, selecionadosSet) {
+  const linhasSelecionadas = (relatorioBase?.tabelaPesquisadores || [])
+    .filter((item) => selecionadosSet.has(item.parte));
+
+  const statusColumns = [...(relatorioBase?.statusColumns || [])];
+  const statusGeralMap = new Map();
+  const totais = {
+    totalRegistros: 0,
+    tratados: 0,
+    pendentes: 0,
+  };
+
+  for (const linha of linhasSelecionadas) {
+    totais.totalRegistros += Number(linha.total || 0);
+
+    for (const status of statusColumns) {
+      const qtd = Number(linha.statuses?.[status] || 0);
+      if (!qtd) continue;
+
+      statusGeralMap.set(status, Number(statusGeralMap.get(status) || 0) + qtd);
+
+      if (normalizarTexto(status) === "pendente") totais.pendentes += qtd;
+      else totais.tratados += qtd;
+    }
+  }
+
+  return {
+    nomeColunaStatus: relatorioBase?.nomeColunaStatus || null,
+    nomeColunaParte: relatorioBase?.nomeColunaParte || null,
+    quantidadePesquisadores: linhasSelecionadas.length,
+    totais,
+    statusColumns,
+    statusGeralRows: mapContagemParaRows(statusGeralMap),
+    tabelaPesquisadores: linhasSelecionadas,
+  };
 }
 
 function gerarRelatorioCsv(csvText) {
@@ -600,25 +772,25 @@ function gerarRelatorioCsv(csvText) {
 
     if (statusInfo.tipo !== "sem_status") {
       incrementarMapaContagem(statusGeralMap, statusInfo.label, 1);
-      parte.statuses[statusInfo.label] = Number(parte.statuses[statusInfo.label] || 0) + 1;
+      parte.statuses[statusInfo.label] = Number(itemOrZero(parte.statuses[statusInfo.label])) + 1;
       statusSet.add(statusInfo.label);
     }
   }
 
-  const statusColumns = [...statusSet]
-    .sort((a, b) => {
-      const qa = Number(statusGeralMap.get(a) || 0);
-      const qb = Number(statusGeralMap.get(b) || 0);
-      if (qb !== qa) return qb - qa;
-      return a.localeCompare(b, "pt-BR");
-    })
-    .map(formatarNomeStatusExibicao);
+  const statusColumnsBrutas = [...statusSet].sort((a, b) => {
+    const qa = Number(statusGeralMap.get(a) || 0);
+    const qb = Number(statusGeralMap.get(b) || 0);
+    if (qb !== qa) return qb - qa;
+    return a.localeCompare(b, "pt-BR");
+  });
+
+  const statusColumns = statusColumnsBrutas.map(formatarNomeStatusExibicao);
 
   const tabelaPesquisadores = [...partesMap.values()]
     .sort((a, b) => ordenarPartes(a.parte, b.parte))
     .map((item) => {
       const statuses = {};
-      for (const statusBruto of [...statusSet]) {
+      for (const statusBruto of statusColumnsBrutas) {
         const nomeExibicao = formatarNomeStatusExibicao(statusBruto);
         statuses[nomeExibicao] = Number(item.statuses[statusBruto] || 0);
       }
@@ -641,6 +813,10 @@ function gerarRelatorioCsv(csvText) {
     statusColumns,
     tabelaPesquisadores,
   };
+}
+
+function itemOrZero(v) {
+  return Number(v || 0);
 }
 
 function classificarStatus(statusRaw) {
@@ -681,7 +857,7 @@ function formatarNomeStatusExibicao(status) {
     pendente: "Pendente",
     pesquisa_feita: "Pesquisa feita",
     retorno: "Retorno",
-    nao_atendeu: "Não atendeu/caixa postal",
+    nao_atendeu: "Nõ atendeu/caixa postal",
     nao_pode_fazer_pesquisa: "Não pode fazer pesquisa",
     numero_nao_existe: "N° não existe/ n° bloqueado",
     outra_cidade: "Outra cidade",

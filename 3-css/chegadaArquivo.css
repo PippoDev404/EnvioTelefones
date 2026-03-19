@@ -96,6 +96,23 @@
   box-shadow: var(--shadow);
 }
 
+.botaoMini {
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.botaoMini:hover {
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+}
+
 .textoDica {
   font-size: 12px;
   color: var(--text-muted);
@@ -163,7 +180,7 @@
 }
 
 /* =========================
-   TABELA
+   TABELA PRINCIPAL
 ========================= */
 .containerTabela {
   max-width: 1200px;
@@ -246,7 +263,7 @@
 }
 
 /* =========================
-   DIALOG (MODAL)
+   MODAL
 ========================= */
 .dialogBase {
   width: min(1180px, calc(100% - 28px));
@@ -256,13 +273,11 @@
   box-shadow: var(--shadow);
   padding: 0;
   color: var(--text);
-
   position: fixed !important;
   top: 50% !important;
   left: 50% !important;
   transform: translate(-50%, -50%) !important;
   margin: 0 !important;
-
   max-height: min(84vh, 900px);
   overflow: hidden;
 }
@@ -275,9 +290,6 @@
   background: rgba(0, 0, 0, 0.70);
 }
 
-/* =========================
-   CONTEÚDO DO MODAL
-========================= */
 .dialogTopo {
   width: 100%;
   display: flex;
@@ -317,7 +329,7 @@
 }
 
 /* =========================
-   PREVIEW TABELA
+   PREVIEW PARTE
 ========================= */
 .tabelaPreviewWrap {
   overflow: auto;
@@ -351,7 +363,7 @@
 }
 
 /* =========================
-   RELATÓRIO DO BOTÃO VER
+   RELATÓRIO
 ========================= */
 .relatorioWrap {
   display: grid;
@@ -418,10 +430,134 @@
   color: var(--text-muted);
 }
 
+/* =========================
+   SELECT DE PESQUISADORES
+========================= */
+.filtroPesquisadores {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 14px;
+  overflow: visible;
+}
+
+.filtroPesquisadoresTopo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.filtroPesquisadoresTitulo {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.filtroPesquisadoresSub {
+  margin: 4px 0 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.selectPesquisadoresWrap {
+  position: relative;
+  padding: 14px;
+}
+
+.botaoSelectPesquisadores {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: left;
+  transition: .2s;
+}
+
+.botaoSelectPesquisadores:hover {
+  box-shadow: var(--shadow);
+  border-color: var(--text-muted);
+}
+
+.dropdownPesquisadores {
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 14px;
+  right: 14px;
+  z-index: 30;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.dropdownPesquisadores[hidden] {
+  display: none !important;
+}
+
+.dropdownPesquisadoresTopo {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  flex-wrap: wrap;
+}
+
+.dropdownPesquisadoresLista {
+  max-height: 280px;
+  overflow: auto;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.itemPesquisadorSelect {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.itemPesquisadorSelect input {
+  cursor: pointer;
+}
+
+.itemPesquisadorSelect.desmarcado {
+  opacity: .55;
+}
+
+/* =========================
+   TABELAS DO RELATÓRIO
+========================= */
 .tabelaRelatorioWrap {
-  overflow-x: auto;
-  overflow-y: auto;
+  overflow: auto;
   max-width: 100%;
+  max-height: 430px;
+  position: relative;
 }
 
 .tabelaRelatorio {
@@ -444,10 +580,14 @@
 
 .tabelaRelatorio th {
   background: var(--surface-2);
+  font-weight: 900;
+}
+
+.tabelaRelatorio thead th {
   position: sticky;
   top: 0;
-  z-index: 1;
-  font-weight: 900;
+  z-index: 6;
+  box-shadow: 0 1px 0 var(--border);
 }
 
 .tabelaRelatorio th.colPesquisador,
@@ -482,7 +622,7 @@
 }
 
 /* =========================
-   PARTES (grid)
+   PARTES
 ========================= */
 .gridPartes {
   display: grid;
@@ -502,6 +642,10 @@
 
   .tabelaRelatorio {
     min-width: 780px;
+  }
+
+  .dropdownPesquisadoresLista {
+    grid-template-columns: 1fr 1fr;
   }
 }
 
