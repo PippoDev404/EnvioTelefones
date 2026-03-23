@@ -796,38 +796,165 @@ function montarTextoResumoSelecionados(base, selecionadosSet) {
 async function salvarFiltroPesquisadoresNoBanco(arquivoKey) {
   if (!arquivoKey || !relatorioAtualBase) return false;
 
-  const arq = arquivosAtuais.find((x) => String(x.arquivoKey) === String(arquivoKey));
-  if (!arq) return false;
+  const arq = arquivosAtuais.find(
+    (x) => String(x.arquivoKey || "").trim() === String(arquivoKey || "").trim()
+  );
 
-  const todos = (relatorioAtualBase.tabelaPesquisadores || []).map((item) => item.parte);
+  if (!arq) {
+    console.warn("Arquivo não encontrado em arquivosAtuais", { arquivoKey });
+    return false;
+  }
+
+  const keyTrimmed = String(arquivoKey || "").trim();
+  const ownerTrimmed = String(arq.ownerId || arq.owner_id || "").trim();
+
+  const todos = (relatorioAtualBase.tabelaPesquisadores || [])
+    .map((item) => String(item.parte || "").trim())
+    .filter(Boolean);
+
   const desmarcados = todos.filter((parte) => !pesquisadoresSelecionados.has(parte));
 
   arq.pesquisadoresDesmarcados = [...desmarcados];
 
-  salvandoFiltroPromise = (async () => {
+  if (salvandoFiltroPromise) {
     try {
-      const { data, error } = await supabase
-        .from(TABELA)
-        .update({
-          pesquisadores_desmarcados: desmarcados,
-        })
-        .eq("arquivo_key", arquivoKey)
-        .eq("owner_id", ownerId)
-        .select("arquivo_key, pesquisadores_desmarcados");
+      await salvandoFiltroPromise;
+    } catch (_) {}
+  }
 
-      if (error) throw error;
+  salvandoFiltroPromise = (async () => {
+    const payload = {
+      pesquisadores_desmarcados: desmarcados,
+      ultima_alteracao_em: new Date().toISOString()
+    };
 
-      console.log("Filtro salvo com sucesso:", data);
+    try {
+      console.log("Salvando filtro de pesquisadores", {
+        tabela: TABELA,
+        arquivoKey: keyTrimmed,
+        ownerId: ownerTrimmed,
+        payload
+      });
+
+      // 1) Verifica se a linha existe com arquivo_key + owner_id
+      let rowCheck = null;
+      let checkError = null;
+
+      if (ownerTrimmed) {
+        const resCheckOwner = await supabase
+          .from(TABELA)
+          .select("arquivo_key, owner_id, pesquisadores_desmarcados")
+          .eq("arquivo_key", keyTrimmed)
+          .eq("owner_id", ownerTrimmed)
+          .maybeSingle();
+
+        rowCheck = resCheckOwner.data;
+        checkError = resCheckOwner.error;
+      }
+
+      // 2) Se não achou com owner_id, tenta só por arquivo_key
+      if (!rowCheck) {
+        const resCheckKey = await supabase
+          .from(TABELA)
+          .select("arquivo_key, owner_id, pesquisadores_desmarcados")
+          .eq("arquivo_key", keyTrimmed)
+          .maybeSingle();
+
+        if (!checkError) checkError = resCheckKey.error;
+        rowCheck = resCheckKey.data;
+      }
+
+      if (checkError) {
+        console.warn("Erro na verificação antes do update", checkError);
+      }
+
+      if (!rowCheck) {
+        console.warn("Nenhuma linha encontrada para salvar filtro", {
+          tabela: TABELA,
+          arquivoKey: keyTrimmed,
+          ownerId: ownerTrimmed
+        });
+        return false;
+      }
+
+      console.log("Linha encontrada para update", rowCheck);
+
+      // 3) Tenta update com arquivo_key + owner_id
+      let updateRes = null;
+
+      if (ownerTrimmed) {
+        updateRes = await supabase
+          .from(TABELA)
+          .update(payload)
+          .eq("arquivo_key", keyTrimmed)
+          .eq("owner_id", ownerTrimmed)
+          .select("arquivo_key, owner_id, pesquisadores_desmarcados, ultima_alteracao_em");
+      }
+
+      if (updateRes?.error) {
+        console.error("Erro no update com owner_id", updateRes.error);
+      }
+
+      // 4) Se não atualizou nada, tenta só com arquivo_key
+      if (!updateRes || updateRes.error || !Array.isArray(updateRes.data) || updateRes.data.length === 0) {
+        console.warn("Update com owner_id não alterou linha; tentando apenas arquivo_key", {
+          arquivoKey: keyTrimmed,
+          ownerId: ownerTrimmed
+        });
+
+        updateRes = await supabase
+          .from(TABELA)
+          .update(payload)
+          .eq("arquivo_key", keyTrimmed)
+          .select("arquivo_key, owner_id, pesquisadores_desmarcados, ultima_alteracao_em");
+      }
+
+      if (updateRes.error) {
+        console.error("Erro no update por arquivo_key", updateRes.error);
+        return false;
+      }
+
+      if (!Array.isArray(updateRes.data) || updateRes.data.length === 0) {
+        console.warn("Update executado mas nenhuma linha retornou", {
+          arquivoKey: keyTrimmed,
+          ownerId: ownerTrimmed
+        });
+
+        // checagem final para confirmar se salvou mesmo assim
+        const confirmRes = await supabase
+          .from(TABELA)
+          .select("arquivo_key, owner_id, pesquisadores_desmarcados, ultima_alteracao_em")
+          .eq("arquivo_key", keyTrimmed)
+          .maybeSingle();
+
+        if (confirmRes.error) {
+          console.error("Erro na confirmação final", confirmRes.error);
+          return false;
+        }
+
+        const salvo = Array.isArray(confirmRes.data?.pesquisadores_desmarcados)
+          && JSON.stringify(confirmRes.data.pesquisadores_desmarcados) === JSON.stringify(desmarcados);
+
+        if (salvo) {
+          console.log("Filtro salvo com sucesso (confirmado por leitura)", confirmRes.data);
+          return true;
+        }
+
+        console.warn("Confirmação final não encontrou o valor salvo", confirmRes.data);
+        return false;
+      }
+
+      console.log("Filtro salvo com sucesso", updateRes.data);
       return true;
     } catch (e) {
       console.error("Erro ao salvar filtro de pesquisadores:", e);
       return false;
+    } finally {
+      salvandoFiltroPromise = null;
     }
   })();
 
-  const resultado = await salvandoFiltroPromise;
-  salvandoFiltroPromise = null;
-  return resultado;
+  return await salvandoFiltroPromise;
 }
 
 function gerarRelatorioFiltrado(relatorioBase, selecionadosSet) {
