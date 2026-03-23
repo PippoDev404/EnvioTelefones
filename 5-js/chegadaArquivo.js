@@ -681,6 +681,7 @@ function renderRelatorioArquivo(relatorio, relatorioBase, selecionadosSet) {
             <tr>
               <th class="colPesquisador">Pesquisador</th>
               <th class="colTotal">Total</th>
+              <th class="colTotal">Tratados</th>
               ${statusColumns.map((status) => `<th class="colStatus">${escapeHtml(status)}</th>`).join("")}
             </tr>
           </thead>
@@ -691,10 +692,8 @@ function renderRelatorioArquivo(relatorio, relatorioBase, selecionadosSet) {
                   <tr>
                     <td class="colPesquisador">${escapeHtml(linha.parte)}</td>
                     <td class="colTotal">${formatarNumero(linha.total)}</td>
-                    ${statusColumns.map((status) => `<td class="colStatus">${formatarNumero(linha.statuses?.[status] || 0)}</td>`).join("")}
-                  </tr>
-                `).join("")
-                : `
+                    <td class="colTotal">${formatarNumero(linha.total - (linha.statuses?.["Pendente"] || 0))}</td>
+                    ${statusColumns.map((status) => `<td class="colStatus">${formatarNumero(linha.statuses?.[status] || 0)}</td>`).join("")}</tr>`).join(""): `
                   <tr>
                     <td colspan="${2 + statusColumns.length}">Nenhum pesquisador selecionado.</td>
                   </tr>
