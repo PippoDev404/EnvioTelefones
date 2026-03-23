@@ -22,6 +22,7 @@ const estadoVazio = document.getElementById("estadoVazio");
 
 const modalVer = document.getElementById("modalVer");
 const btnFecharVer = document.getElementById("btnFecharVer");
+const btnRecarregarVer = document.getElementById("btnRecarregarVer");
 const modalVerTitulo = document.getElementById("modalVerTitulo");
 const modalVerSub = document.getElementById("modalVerSub");
 const relatorioVer = document.getElementById("relatorioVer");
@@ -48,6 +49,7 @@ const txtExcluirNome = document.getElementById("txtExcluirNome");
 // ======================
 let arquivosAtuais = [];
 let arquivoSelecionadoKey = null;
+let arquivoSelecionadoVerKey = null;
 let partesDoArquivo = [];
 let isLoading = false;
 let realtimeChannel = null;
@@ -55,6 +57,9 @@ let excluirPendente = null;
 
 let relatorioAtualBase = null;
 let pesquisadoresSelecionados = new Set();
+let dropdownPesquisadoresAberto = false;
+let recarregandoModalVer = false;
+let salvandoFiltroPromise = null;
 
 init();
 
@@ -75,7 +80,13 @@ function bind() {
   btnFecharVer?.addEventListener("click", () => {
     relatorioAtualBase = null;
     pesquisadoresSelecionados = new Set();
+    arquivoSelecionadoVerKey = null;
+    dropdownPesquisadoresAberto = false;
     fecharDialog(modalVer);
+  });
+
+  btnRecarregarVer?.addEventListener("click", async () => {
+    await recarregarModalVer();
   });
 
   btnFecharPartes?.addEventListener("click", () => {
@@ -119,6 +130,8 @@ function bind() {
       fecharDropdownPesquisadores();
       relatorioAtualBase = null;
       pesquisadoresSelecionados = new Set();
+      arquivoSelecionadoVerKey = null;
+      dropdownPesquisadoresAberto = false;
       fecharDialog(modalVer);
     }
   });
@@ -156,7 +169,7 @@ async function carregarTudo(mostrarPrimeiraVez = false) {
   try {
     const { data, error } = await supabase
       .from(TABELA)
-      .select("arquivo_key, csv, atualizado_em, nome_arquivo_origem, owner_id")
+      .select("arquivo_key, csv, atualizado_em, nome_arquivo_origem, owner_id, pesquisadores_desmarcados")
       .eq("owner_id", ownerId)
       .order("atualizado_em", { ascending: false });
 
@@ -171,6 +184,9 @@ async function carregarTudo(mostrarPrimeiraVez = false) {
         atualizadoEm: r.atualizado_em ?? null,
         csv: garantirTexto(r.csv ?? ""),
         ownerId: String(r.owner_id ?? "").trim(),
+        pesquisadoresDesmarcados: Array.isArray(r.pesquisadores_desmarcados)
+          ? r.pesquisadores_desmarcados.map((x) => String(x || "").trim()).filter(Boolean)
+          : [],
         raw: r,
       }))
       .filter((x) => x.arquivoKey);
@@ -197,6 +213,30 @@ async function carregarTudo(mostrarPrimeiraVez = false) {
   } finally {
     isLoading = false;
   }
+}
+
+async function carregarArquivoPorKey(arquivoKey) {
+  const { data, error } = await supabase
+    .from(TABELA)
+    .select("arquivo_key, csv, atualizado_em, nome_arquivo_origem, owner_id, pesquisadores_desmarcados")
+    .eq("owner_id", ownerId)
+    .eq("arquivo_key", arquivoKey)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  return {
+    arquivoKey: String(data.arquivo_key ?? "").trim(),
+    nome: String(data.nome_arquivo_origem ?? "—").trim(),
+    atualizadoEm: data.atualizado_em ?? null,
+    csv: garantirTexto(data.csv ?? ""),
+    ownerId: String(data.owner_id ?? "").trim(),
+    pesquisadoresDesmarcados: Array.isArray(data.pesquisadores_desmarcados)
+      ? data.pesquisadores_desmarcados.map((x) => String(x || "").trim()).filter(Boolean)
+      : [],
+    raw: data,
+  };
 }
 
 // ======================
@@ -402,15 +442,89 @@ function verArquivoLocal(arquivoKey) {
   const arq = arquivosAtuais.find((x) => String(x.arquivoKey) === String(arquivoKey));
   if (!arq) return;
 
-  if (modalVerTitulo) modalVerTitulo.textContent = `Relatório: ${arq.nome || arq.arquivoKey}`;
+  arquivoSelecionadoVerKey = String(arquivoKey);
+
+  if (modalVerTitulo) {
+    modalVerTitulo.textContent = `Relatório: ${arq.nome || arq.arquivoKey}`;
+  }
 
   relatorioAtualBase = gerarRelatorioCsv(arq.csv || "");
-  pesquisadoresSelecionados = new Set(
-    (relatorioAtualBase?.tabelaPesquisadores || []).map((item) => item.parte)
+
+  const pesquisadoresBase = relatorioAtualBase?.tabelaPesquisadores || [];
+  const todosPesquisadores = pesquisadoresBase.map((item) => item.parte);
+  const desmarcados = new Set(
+    (arq.pesquisadoresDesmarcados || [])
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
   );
 
+  pesquisadoresSelecionados = new Set(
+    todosPesquisadores.filter((parte) => !desmarcados.has(parte))
+  );
+
+  dropdownPesquisadoresAberto = false;
   atualizarRelatorioFiltrado();
   abrirDialog(modalVer);
+}
+
+async function recarregarModalVer() {
+  if (!arquivoSelecionadoVerKey || recarregandoModalVer) return;
+
+  recarregandoModalVer = true;
+
+  if (btnRecarregarVer) {
+    btnRecarregarVer.disabled = true;
+    btnRecarregarVer.innerHTML = `<i class="fa-solid fa-rotate-right fa-spin"></i> Recarregando`;
+  }
+
+  try {
+    if (salvandoFiltroPromise) {
+      await salvandoFiltroPromise;
+    }
+
+    const arqAtualizado = await carregarArquivoPorKey(arquivoSelecionadoVerKey);
+    if (!arqAtualizado) return;
+
+    const idx = arquivosAtuais.findIndex(
+      (x) => String(x.arquivoKey) === String(arquivoSelecionadoVerKey)
+    );
+
+    if (idx >= 0) {
+      arquivosAtuais[idx] = arqAtualizado;
+    } else {
+      arquivosAtuais.unshift(arqAtualizado);
+    }
+
+    renderTabelaArquivos(arquivosAtuais);
+    aplicarFiltros();
+
+    if (txtTotal) txtTotal.textContent = String(arquivosAtuais.length);
+
+    relatorioAtualBase = gerarRelatorioCsv(arqAtualizado.csv || "");
+
+    const pesquisadoresBase = relatorioAtualBase?.tabelaPesquisadores || [];
+    const todosPesquisadores = pesquisadoresBase.map((item) => item.parte);
+    const desmarcados = new Set(
+      (arqAtualizado.pesquisadoresDesmarcados || [])
+        .map((x) => String(x || "").trim())
+        .filter(Boolean)
+    );
+
+    pesquisadoresSelecionados = new Set(
+      todosPesquisadores.filter((parte) => !desmarcados.has(parte))
+    );
+
+    atualizarRelatorioFiltrado();
+  } catch (e) {
+    console.error("Erro ao recarregar modal:", e);
+  } finally {
+    recarregandoModalVer = false;
+
+    if (btnRecarregarVer) {
+      btnRecarregarVer.disabled = false;
+      btnRecarregarVer.innerHTML = `<i class="fa-solid fa-rotate-right"></i> Recarregar`;
+    }
+  }
 }
 
 function atualizarRelatorioFiltrado() {
@@ -484,7 +598,7 @@ function renderRelatorioArquivo(relatorio, relatorioBase, selecionadosSet) {
           <i class="fa-solid fa-chevron-down"></i>
         </button>
 
-        <div class="dropdownPesquisadores" id="dropdownPesquisadores" hidden>
+        <div class="dropdownPesquisadores" id="dropdownPesquisadores" ${dropdownPesquisadoresAberto ? "" : "hidden"}>
           <div class="dropdownPesquisadoresTopo">
             <button class="botaoMini" type="button" data-filtro-p="todos">Selecionar todos</button>
             <button class="botaoMini" type="button" data-filtro-p="nenhum">Limpar todos</button>
@@ -603,13 +717,17 @@ function bindFiltroPesquisadores() {
   btnAbrir?.addEventListener("click", (e) => {
     e.stopPropagation();
     if (!dropdown) return;
+
     dropdown.hidden = !dropdown.hidden;
+    dropdownPesquisadoresAberto = !dropdown.hidden;
   });
 
   relatorioVer?.querySelectorAll('input[data-pesquisador]')?.forEach((input) => {
     input.addEventListener("click", (e) => e.stopPropagation());
 
-    input.addEventListener("change", (e) => {
+    input.addEventListener("change", async (e) => {
+      e.stopPropagation();
+
       const checkbox = e.currentTarget;
       const parte = String(checkbox?.dataset?.pesquisador || "").trim();
       if (!parte) return;
@@ -617,28 +735,52 @@ function bindFiltroPesquisadores() {
       if (checkbox.checked) pesquisadoresSelecionados.add(parte);
       else pesquisadoresSelecionados.delete(parte);
 
+      dropdownPesquisadoresAberto = true;
+
+      await salvarFiltroPesquisadoresNoBanco(arquivoSelecionadoVerKey);
       atualizarRelatorioFiltrado();
     });
+
+    atualizarClasseVisualCheckbox(input);
   });
 
-  relatorioVer?.querySelector('[data-filtro-p="todos"]')?.addEventListener("click", (e) => {
+  relatorioVer?.querySelector('[data-filtro-p="todos"]')?.addEventListener("click", async (e) => {
     e.stopPropagation();
+
     pesquisadoresSelecionados = new Set(
       (relatorioAtualBase?.tabelaPesquisadores || []).map((item) => item.parte)
     );
+
+    dropdownPesquisadoresAberto = true;
+
+    await salvarFiltroPesquisadoresNoBanco(arquivoSelecionadoVerKey);
     atualizarRelatorioFiltrado();
   });
 
-  relatorioVer?.querySelector('[data-filtro-p="nenhum"]')?.addEventListener("click", (e) => {
+  relatorioVer?.querySelector('[data-filtro-p="nenhum"]')?.addEventListener("click", async (e) => {
     e.stopPropagation();
+
     pesquisadoresSelecionados = new Set();
+
+    dropdownPesquisadoresAberto = true;
+
+    await salvarFiltroPesquisadoresNoBanco(arquivoSelecionadoVerKey);
     atualizarRelatorioFiltrado();
   });
+}
+
+function atualizarClasseVisualCheckbox(input) {
+  const label = input?.closest?.(".itemPesquisadorSelect");
+  if (!label) return;
+
+  if (input.checked) label.classList.remove("desmarcado");
+  else label.classList.add("desmarcado");
 }
 
 function fecharDropdownPesquisadores() {
   const dropdown = document.getElementById("dropdownPesquisadores");
   if (dropdown) dropdown.hidden = true;
+  dropdownPesquisadoresAberto = false;
 }
 
 function montarTextoResumoSelecionados(base, selecionadosSet) {
@@ -649,6 +791,43 @@ function montarTextoResumoSelecionados(base, selecionadosSet) {
   if (marcados === total) return `Todos os pesquisadores (${total})`;
   if (marcados === 0) return "Nenhum pesquisador selecionado";
   return `${marcados} de ${total} pesquisador(es) selecionado(s)`;
+}
+
+async function salvarFiltroPesquisadoresNoBanco(arquivoKey) {
+  if (!arquivoKey || !relatorioAtualBase) return false;
+
+  const arq = arquivosAtuais.find((x) => String(x.arquivoKey) === String(arquivoKey));
+  if (!arq) return false;
+
+  const todos = (relatorioAtualBase.tabelaPesquisadores || []).map((item) => item.parte);
+  const desmarcados = todos.filter((parte) => !pesquisadoresSelecionados.has(parte));
+
+  arq.pesquisadoresDesmarcados = [...desmarcados];
+
+  salvandoFiltroPromise = (async () => {
+    try {
+      const { data, error } = await supabase
+        .from(TABELA)
+        .update({
+          pesquisadores_desmarcados: desmarcados,
+        })
+        .eq("arquivo_key", arquivoKey)
+        .eq("owner_id", ownerId)
+        .select("arquivo_key, pesquisadores_desmarcados");
+
+      if (error) throw error;
+
+      console.log("Filtro salvo com sucesso:", data);
+      return true;
+    } catch (e) {
+      console.error("Erro ao salvar filtro de pesquisadores:", e);
+      return false;
+    }
+  })();
+
+  const resultado = await salvandoFiltroPromise;
+  salvandoFiltroPromise = null;
+  return resultado;
 }
 
 function gerarRelatorioFiltrado(relatorioBase, selecionadosSet) {
@@ -1268,7 +1447,7 @@ function hashLista(lista) {
   return lista
     .map(
       (x) =>
-        `${x.arquivoKey ?? ""}|${x.atualizadoEm ?? ""}|${x.nome ?? ""}|${(x.csv ?? "").length}|${x.ownerId ?? ""}`
+        `${x.arquivoKey ?? ""}|${x.atualizadoEm ?? ""}|${x.nome ?? ""}|${(x.csv ?? "").length}|${x.ownerId ?? ""}|${JSON.stringify(x.pesquisadoresDesmarcados ?? [])}`
     )
     .sort()
     .join("||");
