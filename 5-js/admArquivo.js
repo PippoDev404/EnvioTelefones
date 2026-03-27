@@ -330,16 +330,8 @@ function obterDataHoraBr() {
   return `${dia}/${mes}/${ano} ${hora}:${min}`;
 }
 
-function formatarDataBr(valor) {
-  if (!valor) return "—";
-
-  try {
-    const d = new Date(valor);
-    if (Number.isNaN(d.getTime())) return String(valor);
-    return d.toLocaleString("pt-BR");
-  } catch {
-    return String(valor);
-  }
+function extrairDataArquivoDoRegistro(reg) {
+  return reg?.data ?? "";
 }
 
 function estimarTamanhoCsv(csv) {
@@ -613,7 +605,6 @@ function colunaPareceData(coluna) {
   const n = normalizarNomeColunaControle(coluna);
 
   if (
-    n === "DIA_PESQ" ||
     n === "DIA_PESQUISA" ||
     n === "DATA" ||
     n === "DATA_PESQ" ||
@@ -769,10 +760,14 @@ function removerColunasOperacionaisDaMatriz(matriz = []) {
   const novoCabecalho = [];
 
   cabecalhoOriginal.forEach((coluna, idx) => {
-    if (!familiaColunaOperacional(coluna)) {
-      indicesMantidos.push(idx);
-      novoCabecalho.push(coluna);
-    }
+    const familia = familiaColunaOperacional(coluna);
+    const nomeNormalizado = normalizarNomeColunaControle(coluna);
+
+    if (familia === "DT.ALTERACAO") return;
+    if (nomeNormalizado === "TF3") return;
+
+    indicesMantidos.push(idx);
+    novoCabecalho.push(coluna);
   });
 
   const linhas = matriz.slice(1).map((linha) =>
@@ -874,6 +869,7 @@ function abrirJanelaImpressaoPdf(item) {
           font-family: Arial, Helvetica, sans-serif;
           margin: 0;
           color:#111;
+          font-size:10px;
         }
         h1{
           font-size:16px;
@@ -892,12 +888,14 @@ function abrirJanelaImpressaoPdf(item) {
         }
         th,td{
           border:1px solid #999;
-          padding:5px 6px;
+          padding:3px 4px;
           text-align:left;
           vertical-align:top;
-          word-break:break-word;
-          white-space:normal;
-          line-height:1.35;
+          word-break:normal;
+          overflow-wrap:normal;
+          white-space:nowrap;
+          line-height:1.2;
+          font-size:9px;
         }
         th{
           background:#eee;
@@ -963,12 +961,12 @@ async function baixarPdfItem(item) {
       let y = margemY;
 
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
+      doc.setFontSize(10);
       doc.text(nome, margemX, y);
 
       y += 16;
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
+      doc.setFontSize(7);
       doc.text(`Parte: ${item?.labelVisivel || item?.labelParte || item?.chaveParte || "—"}`, margemX, y);
 
       y += 12;
@@ -981,9 +979,11 @@ async function baixarPdfItem(item) {
       const paddingY = 4;
       const minLineHeight = 10;
 
-      function quebrarTexto(valor, largura) {
+      function quebrarTexto(valor, largura, coluna = "") {
         const texto = String(valor ?? "");
-        return doc.splitTextToSize(texto, Math.max(largura - paddingX * 2, 8));
+
+        // Telefones e conteúdos do PDF ficam em uma linha só
+        return [texto];
       }
 
       function alturaDaLinha(celulasQuebradas) {
@@ -1021,7 +1021,7 @@ async function baixarPdfItem(item) {
       }
 
       function desenharCabecalho() {
-        const headerQuebrado = headers.map((h) => quebrarTexto(h, colWidth));
+        const headerQuebrado = headers.map((h) => quebrarTexto(h, colWidth, h));
         const altura = alturaDaLinha(headerQuebrado);
         desenharLinha(headerQuebrado, altura, true);
       }
@@ -1029,7 +1029,7 @@ async function baixarPdfItem(item) {
       desenharCabecalho();
 
       for (const row of rows) {
-        const celulasQuebradas = headers.map((_, idx) => quebrarTexto(row[idx] ?? "", colWidth));
+        const celulasQuebradas = headers.map((header, idx) => quebrarTexto(row[idx] ?? "", colWidth, header));
         const altura = alturaDaLinha(celulasQuebradas);
 
         if (y + altura > pageHeight - 24) {
@@ -2211,10 +2211,6 @@ function extrairTamanhoBytesDoRegistro(reg) {
   return Number.isFinite(n) ? n : null;
 }
 
-function extrairDataArquivoDoRegistro(reg) {
-  return primeiroValor(reg, ["data", "created_at", "criado_em", "uploaded_at", "updated_at"]) || "";
-}
-
 function extrairColunasVisiveisDoRegistro(reg) {
   return primeiroValor(reg, ["colunasVisiveis", "colunas_visiveis"]) || {};
 }
@@ -2254,7 +2250,7 @@ function normalizarRegistroArquivoSupabase(reg) {
     id: reg?.id ?? null,
     arquivoKey: extrairArquivoKeyDoRegistro(reg),
     nome: extrairNomeArquivoDoRegistro(reg),
-    data: formatarDataBr(extrairDataArquivoDoRegistro(reg)),
+    data: extrairDataArquivoDoRegistro(reg),
     tamanho: tamanhoBytes !== null ? formatarBytes(tamanhoBytes) : String(primeiroValor(reg, ["tamanho", "file_size_text"]) || "—"),
     tamanhoBytes: tamanhoBytes ?? 0,
     status: extrairStatusArquivoDoRegistro(reg),
@@ -2983,17 +2979,6 @@ async function lancarPartes() {
     return;
   }
 
-  if (textoDicaLancamento) textoDicaLancamento.textContent = "Excluindo mensagens do arquivo…";
-
-  await excluirMensagensTelegramEspecificas({
-    modo: "ARQUIVO_INTEIRO",
-    contexto: "LOTE (Lançar partes geral)",
-    ownerId: obterOwnerIdAtual(),
-    arquivoKey: obterArquivoKeyAtual(),
-    idArquivoOrigem: idArquivoAtual ?? registroArquivoAtual?.id ?? null,
-    nomeArquivoOrigem: registroArquivoAtual?.nome || "",
-  });
-
   if (textoDicaLancamento) textoDicaLancamento.textContent = "Lançando…";
 
   const idOrigemFinal = idArquivoAtual ?? registroArquivoAtual?.id ?? null;
@@ -3298,11 +3283,11 @@ botaoExcluirMensagensTelegram?.addEventListener("click", async () => {
 
       await modalInfo(
         "Exclusão concluída",
-        `✅ Exclusão solicitada com sucesso.\n\nArquivo: ${registroArquivoAtual?.nome || "—"}\n${resp?.apagadas !== undefined ? `Mensagens apagadas: ${resp.apagadas}\n` : ""}`
+        `✅ Exclusão solicitada com sucesso.\n\nArquivo: ${registroArquivoAtual?.nome || "—"}`
       );
     } catch (e) {
       console.error(e);
-      await modalInfo("Falha na exclusão", `❌ Falha ao excluir mensagens do Telegram.\n\n${e?.message || e}`);
+      await modalInfo("Falha na exclusão", `❌ Falha ao excluir mensagens.\n\n${e?.message || e}`);
     }
   });
 });
