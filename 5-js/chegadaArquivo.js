@@ -2,6 +2,8 @@ import { requireAuth, logout } from "../8-src/auth.js";
 import { supabase } from "../8-src/supabaseClient.js";
 
 const TABELA = "entregas_consolidado";
+const TABELA_ROWS = "entregas_linhas";
+const cacheCsvOperacional = new Map();
 
 const user = await requireAuth({ redirectTo: "../7-login/login.html" });
 if (!user) throw new Error("Sem sessão");
@@ -157,6 +159,67 @@ function bind() {
   window.addEventListener("beforeunload", () => {
     encerrarRealtime();
   });
+}
+
+async function obterCsvOperacional(arquivoKey, forceReload = false) {
+  const key = String(arquivoKey || "").trim();
+  if (!key) return "";
+
+  if (!forceReload && cacheCsvOperacional.has(key)) {
+    return cacheCsvOperacional.get(key);
+  }
+
+  const { data, error } = await supabase
+    .from(TABELA_ROWS)
+    .select("linha_idx, line, idp, estado, cidade, regiao_cidade, tf1, tf2, status, observacao, dt_alteracao, pesquisador, arquivo_key")
+    .eq("arquivo_key", key)
+    .order("linha_idx", { ascending: true });
+
+  if (error) throw error;
+
+  const rows = Array.isArray(data) ? data : [];
+
+  const headers = [
+    "LINE",
+    "IDP",
+    "ESTADO",
+    "CIDADE",
+    "REGIAO_CIDADE",
+    "TF1",
+    "TF2",
+    "STATUS",
+    "OBSERVACAO",
+    "DT_ALTERACAO",
+    "Nº PESQ."
+  ];
+
+  function esc(v) {
+    const s = String(v ?? "");
+    if (/[",\n\r]/.test(s)) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  }
+
+  const linhas = rows.map((r, idx) => {
+    return [
+      esc(r.line ?? idx + 1),
+      esc(r.idp ?? ""),
+      esc(r.estado ?? ""),
+      esc(r.cidade ?? ""),
+      esc(r.regiao_cidade ?? ""),
+      esc(r.tf1 ?? ""),
+      esc(r.tf2 ?? ""),
+      esc(r.status ?? ""),
+      esc(r.observacao ?? ""),
+      esc(r.dt_alteracao ?? ""),
+      esc(r.pesquisador ?? "SEM PARTE")
+    ].join(",");
+  });
+
+  const csv = [headers.join(","), ...linhas].join("\n");
+  cacheCsvOperacional.set(key, csv);
+  return csv;
 }
 
 // ======================
@@ -401,19 +464,30 @@ async function confirmarExclusao() {
 
   const payload = { ...excluirPendente };
 
+  cacheCsvOperacional.delete(payload.arquivoKey);
   removerDaListaLocal(payload.arquivoKey);
   fecharModalExcluir();
 
   try {
-    const { error } = await supabase
+    const { error: errorRows } = await supabase
+      .from(TABELA_ROWS)
+      .delete()
+      .eq("arquivo_key", payload.arquivoKey);
+
+    if (errorRows) {
+      await carregarTudo(true);
+      throw errorRows;
+    }
+
+    const { error: errorConsolidado } = await supabase
       .from(TABELA)
       .delete()
       .eq("arquivo_key", payload.arquivoKey)
       .eq("owner_id", ownerId);
 
-    if (error) {
+    if (errorConsolidado) {
       await carregarTudo(true);
-      throw error;
+      throw errorConsolidado;
     }
 
     await carregarTudo(true);
@@ -436,7 +510,7 @@ function removerDaListaLocal(arquivoKey) {
 // ======================
 // VER ARQUIVO = RELATÓRIO
 // ======================
-function verArquivoLocal(arquivoKey) {
+async function verArquivoLocal(arquivoKey) {
   limparRelatorioMaster();
 
   const arq = arquivosAtuais.find((x) => String(x.arquivoKey) === String(arquivoKey));
@@ -448,7 +522,13 @@ function verArquivoLocal(arquivoKey) {
     modalVerTitulo.textContent = `Relatório: ${arq.nome || arq.arquivoKey}`;
   }
 
-  relatorioAtualBase = gerarRelatorioCsv(arq.csv || "");
+  try {
+    const csvOperacional = await obterCsvOperacional(arquivoKey, true);
+    relatorioAtualBase = gerarRelatorioCsv(csvOperacional || "");
+  } catch (e) {
+    console.error("Erro ao carregar CSV operacional:", e);
+    relatorioAtualBase = gerarRelatorioCsv(arq.csv || "");
+  }
 
   const pesquisadoresBase = relatorioAtualBase?.tabelaPesquisadores || [];
   const todosPesquisadores = pesquisadoresBase.map((item) => item.parte);
@@ -500,7 +580,13 @@ async function recarregarModalVer() {
 
     if (txtTotal) txtTotal.textContent = String(arquivosAtuais.length);
 
-    relatorioAtualBase = gerarRelatorioCsv(arqAtualizado.csv || "");
+    try {
+      const csvOperacional = await obterCsvOperacional(arquivoSelecionadoVerKey, true);
+      relatorioAtualBase = gerarRelatorioCsv(csvOperacional || "");
+    } catch (e) {
+      console.error("Erro ao recarregar CSV operacional:", e);
+      relatorioAtualBase = gerarRelatorioCsv(arqAtualizado.csv || "");
+    }
 
     const pesquisadoresBase = relatorioAtualBase?.tabelaPesquisadores || [];
     const todosPesquisadores = pesquisadoresBase.map((item) => item.parte);
@@ -605,11 +691,10 @@ function renderRelatorioArquivo(relatorio, relatorioBase, selecionadosSet) {
           </div>
 
           <div class="dropdownPesquisadoresLista">
-            ${
-              pesquisadoresBase.length
-                ? pesquisadoresBase.map((item) => {
-                    const checked = selecionadosSet.has(item.parte);
-                    return `
+            ${pesquisadoresBase.length
+      ? pesquisadoresBase.map((item) => {
+        const checked = selecionadosSet.has(item.parte);
+        return `
                       <label class="itemPesquisadorSelect ${checked ? "" : "desmarcado"}">
                         <input
                           type="checkbox"
@@ -619,9 +704,9 @@ function renderRelatorioArquivo(relatorio, relatorioBase, selecionadosSet) {
                         <span>${escapeHtml(item.parte)}</span>
                       </label>
                     `;
-                  }).join("")
-                : `<div class="relatorioVazio" style="width:100%;">Nenhum pesquisador identificado.</div>`
-            }
+      }).join("")
+      : `<div class="relatorioVazio" style="width:100%;">Nenhum pesquisador identificado.</div>`
+    }
           </div>
         </div>
       </div>
@@ -646,20 +731,19 @@ function renderRelatorioArquivo(relatorio, relatorioBase, selecionadosSet) {
             </tr>
           </thead>
           <tbody>
-            ${
-              statusGeralRows.length
-                ? statusGeralRows.map((item) => `
+            ${statusGeralRows.length
+      ? statusGeralRows.map((item) => `
                   <tr>
                     <td style="text-align:left;">${escapeHtml(item.status)}</td>
                     <td class="colTotal">${formatarNumero(item.quantidade)}</td>
                   </tr>
                 `).join("")
-                : `
+      : `
                   <tr>
                     <td colspan="2">Nenhum status encontrado.</td>
                   </tr>
                 `
-            }
+    }
           </tbody>
         </table>
       </div>
@@ -686,19 +770,18 @@ function renderRelatorioArquivo(relatorio, relatorioBase, selecionadosSet) {
             </tr>
           </thead>
           <tbody>
-            ${
-              tabelaPorPesquisador.length
-                ? tabelaPorPesquisador.map((linha) => `
+            ${tabelaPorPesquisador.length
+      ? tabelaPorPesquisador.map((linha) => `
                   <tr>
                     <td class="colPesquisador">${escapeHtml(linha.parte)}</td>
                     <td class="colTotal">${formatarNumero(linha.total)}</td>
                     <td class="colTotal">${formatarNumero(linha.total - (linha.statuses?.["Pendente"] || 0))}</td>
-                    ${statusColumns.map((status) => `<td class="colStatus">${formatarNumero(linha.statuses?.[status] || 0)}</td>`).join("")}</tr>`).join(""): `
+                    ${statusColumns.map((status) => `<td class="colStatus">${formatarNumero(linha.statuses?.[status] || 0)}</td>`).join("")}</tr>`).join("") : `
                   <tr>
                     <td colspan="${2 + statusColumns.length}">Nenhum pesquisador selecionado.</td>
                   </tr>
                 `
-            }
+    }
           </tbody>
         </table>
       </div>
@@ -818,7 +901,7 @@ async function salvarFiltroPesquisadoresNoBanco(arquivoKey) {
   if (salvandoFiltroPromise) {
     try {
       await salvandoFiltroPromise;
-    } catch (_) {}
+    } catch (_) { }
   }
 
   salvandoFiltroPromise = (async () => {
@@ -1236,7 +1319,7 @@ function extrairNumeroParte(nome) {
 // ======================
 // DOWNLOAD / PARTES
 // ======================
-function baixarArquivoLocal(arquivoKey) {
+async function baixarArquivoLocal(arquivoKey) {
   const arq = arquivosAtuais.find((x) => String(x.arquivoKey) === String(arquivoKey));
   if (!arq || !window.XLSX) return;
 
@@ -1244,10 +1327,15 @@ function baixarArquivoLocal(arquivoKey) {
     .replace(/\.csv$/i, "")
     .replace(/\.xlsx$/i, "");
 
-  salvarXlsxComoArquivoCsv(arq.csv || "", `${base}.xlsx`);
+  try {
+    const csvOperacional = await obterCsvOperacional(arquivoKey, true);
+    salvarXlsxComoArquivoCsv(csvOperacional || "", `${base}.xlsx`);
+  } catch (e) {
+    console.error("Erro ao baixar arquivo operacional:", e);
+  }
 }
 
-function abrirPartesLocal(arquivoKey) {
+async function abrirPartesLocal(arquivoKey) {
   arquivoSelecionadoKey = arquivoKey;
   partesDoArquivo = [];
 
@@ -1263,25 +1351,34 @@ function abrirPartesLocal(arquivoKey) {
     modalPartesTitulo.textContent = `Partes: ${arq.nome || arq.arquivoKey}`;
   }
 
-  const partes = gerarPartesDoCsv(arq.csv || "", "Nº PESQ.");
+  try {
+    const csvOperacional = await obterCsvOperacional(arquivoKey, true);
+    const partes = gerarPartesDoCsv(csvOperacional || "", "Nº PESQ.");
 
-  if (!partes.length) {
+    if (!partes.length) {
+      if (selectParte) {
+        selectParte.innerHTML = `<option value="">(sem partes detectadas)</option>`;
+      }
+      abrirDialog(modalPartes);
+      return;
+    }
+
+    partesDoArquivo = partes;
+
     if (selectParte) {
-      selectParte.innerHTML = `<option value="">(sem partes detectadas)</option>`;
+      selectParte.innerHTML = partes
+        .map((p) => `<option value="${escapeHtml(String(p.key))}">${escapeHtml(String(p.nome))}</option>`)
+        .join("");
+    }
+
+    abrirDialog(modalPartes);
+  } catch (e) {
+    console.error("Erro ao carregar partes do arquivo:", e);
+    if (selectParte) {
+      selectParte.innerHTML = `<option value="">(erro ao carregar partes)</option>`;
     }
     abrirDialog(modalPartes);
-    return;
   }
-
-  partesDoArquivo = partes;
-
-  if (selectParte) {
-    selectParte.innerHTML = partes
-      .map((p) => `<option value="${escapeHtml(String(p.key))}">${escapeHtml(String(p.nome))}</option>`)
-      .join("");
-  }
-
-  abrirDialog(modalPartes);
 }
 
 function verParteLocal(_arquivoKey, parteKey) {

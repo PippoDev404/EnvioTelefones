@@ -33,17 +33,11 @@ const modalConfirmacaoBackdrop = document.getElementById("modalConfirmacaoBackdr
 const btnCancelarRemocao = document.getElementById("btnCancelarRemocao");
 const btnConfirmarRemocao = document.getElementById("btnConfirmarRemocao");
 
-// Opcional no HTML:
-// <select id="selectTipoCota">
-//   <option value="auto">Automático</option>
-//   <option value="numero">Número</option>
-//   <option value="estado">Estado</option>
-// </select>
 const selectTipoCota = document.getElementById("selectTipoCota");
-
-// Opcional no HTML para exibir detecção:
-// <div id="tipoCotaInfo"></div>
 const tipoCotaInfo = document.getElementById("tipoCotaInfo");
+
+const selectEstado = document.getElementById("selectEstado");
+const selectCidade = document.getElementById("selectCidade");
 
 let arquivoSelecionado = null;
 let arquivoGeradoUnico = null;
@@ -55,7 +49,78 @@ function inicializar() {
   inicializarProcessamentoUnico();
   inicializarModal();
   inicializarModalRemocao();
+  inicializarFiltrosConsulta();
   atualizarEstadoArquivo();
+}
+
+async function inicializarFiltrosConsulta() {
+  await carregarEstados();
+  await carregarCidades();
+
+  selectEstado?.addEventListener("change", async () => {
+    await carregarCidades(selectEstado.value);
+  });
+}
+
+async function carregarEstados() {
+  if (!selectEstado) return;
+
+  try {
+    const { data, error } = await supabase
+      .from("base_mestra")
+      .select("estado")
+      .not("estado", "is", null)
+      .limit(50000);
+
+    if (error) throw error;
+
+    const estadosUnicos = [...new Set(
+      (data || [])
+        .map((item) => String(item.estado || "").trim())
+        .filter(Boolean)
+    )].sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+    selectEstado.innerHTML =
+      `<option value="">Todos os estados</option>` +
+      estadosUnicos
+        .map((estado) => `<option value="${escapeHtml(estado)}">${escapeHtml(estado)}</option>`)
+        .join("");
+  } catch (error) {
+    console.error("Erro ao carregar estados:", error);
+  }
+}
+
+async function carregarCidades(estadoSelecionado = "") {
+  if (!selectCidade) return;
+
+  try {
+    let query = supabase
+      .from("base_mestra")
+      .select("cidade")
+      .not("cidade", "is", null)
+      .limit(50000);
+
+    if (estadoSelecionado) {
+      query = query.eq("estado", estadoSelecionado);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const cidadesUnicas = [...new Set(
+      (data || [])
+        .map((item) => String(item.cidade || "").trim())
+        .filter(Boolean)
+    )].sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+    selectCidade.innerHTML =
+      `<option value="">Todas as cidades</option>` +
+      cidadesUnicas
+        .map((cidade) => `<option value="${escapeHtml(cidade)}">${escapeHtml(cidade)}</option>`)
+        .join("");
+  } catch (error) {
+    console.error("Erro ao carregar cidades:", error);
+  }
 }
 
 function inicializarUpload() {
@@ -499,7 +564,9 @@ async function buscarRegistrosParaCota(cotas) {
         dia: cota.dia,
         tipoCota: cota.tipoCota,
         regiao: item.regiao,
-        idsIgnorados: idsUsados
+        idsIgnorados: idsUsados,
+        estadoSelecionado: selectEstado?.value || "",
+        cidadeSelecionada: selectCidade?.value || ""
       });
 
       for (const reg of registros) {
@@ -521,7 +588,9 @@ async function buscarNoBancoPorCota({
   dia,
   tipoCota,
   regiao,
-  idsIgnorados = new Set()
+  idsIgnorados = new Set(),
+  estadoSelecionado = "",
+  cidadeSelecionada = ""
 }) {
   const quantidadeDesejada = Number(quantidade) || 0;
   if (quantidadeDesejada <= 0) return [];
@@ -572,6 +641,14 @@ async function buscarNoBancoPorCota({
 
   if (regiao) {
     query = query.eq("regiao_cidade", regiao);
+  }
+
+  if (estadoSelecionado) {
+    query = query.eq("estado", estadoSelecionado);
+  }
+
+  if (cidadeSelecionada) {
+    query = query.eq("cidade", cidadeSelecionada);
   }
 
   const { data, error } = await query;
