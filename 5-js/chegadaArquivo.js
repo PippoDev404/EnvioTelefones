@@ -169,15 +169,26 @@ async function obterCsvOperacional(arquivoKey, forceReload = false) {
     return cacheCsvOperacional.get(key);
   }
 
-  const { data, error } = await supabase
-    .from(TABELA_ROWS)
-    .select("linha_idx, line, idp, estado, cidade, regiao_cidade, tf1, tf2, status, observacao, dt_alteracao, pesquisador, arquivo_key")
-    .eq("arquivo_key", key)
-    .order("linha_idx", { ascending: true });
+  const pageSize = 1000;
+  let from = 0;
+  let allRows = [];
 
-  if (error) throw error;
+  while (true) {
+    const { data, error } = await supabase
+      .from(TABELA_ROWS)
+      .select("linha_idx, line, idp, estado, cidade, regiao_cidade, tf1, tf2, status, observacao, dt_alteracao, pesquisador, arquivo_key")
+      .eq("arquivo_key", key)
+      .order("linha_idx", { ascending: true })
+      .range(from, from + pageSize - 1);
 
-  const rows = Array.isArray(data) ? data : [];
+    if (error) throw error;
+
+    const chunk = Array.isArray(data) ? data : [];
+    allRows.push(...chunk);
+
+    if (chunk.length < pageSize) break;
+    from += pageSize;
+  }
 
   const headers = [
     "LINE",
@@ -201,7 +212,7 @@ async function obterCsvOperacional(arquivoKey, forceReload = false) {
     return s;
   }
 
-  const linhas = rows.map((r, idx) => {
+  const linhas = allRows.map((r, idx) => {
     return [
       esc(r.line ?? idx + 1),
       esc(r.idp ?? ""),
