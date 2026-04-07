@@ -80,6 +80,7 @@ function bind() {
   });
 
   btnFecharVer?.addEventListener("click", () => {
+    iniciarRealtime();
     relatorioAtualBase = null;
     pesquisadoresSelecionados = new Set();
     arquivoSelecionadoVerKey = null;
@@ -169,39 +170,18 @@ async function obterCsvOperacional(arquivoKey, forceReload = false) {
     return cacheCsvOperacional.get(key);
   }
 
-  const pageSize = 1000;
-  let from = 0;
-  let allRows = [];
+  // 🔥 UMA ÚNICA REQUISIÇÃO
+  const { data, error } = await supabase
+    .from(TABELA_ROWS)
+    .select("linha_idx, line, idp, estado, cidade, regiao_cidade, tf1, tf2, status, observacao, dt_alteracao, pesquisador, arquivo_key")
+    .eq("arquivo_key", key)
+    .order("linha_idx", { ascending: true });
 
-  while (true) {
-    const { data, error } = await supabase
-      .from(TABELA_ROWS)
-      .select("linha_idx, line, idp, estado, cidade, regiao_cidade, tf1, tf2, status, observacao, dt_alteracao, pesquisador, arquivo_key")
-      .eq("arquivo_key", key)
-      .order("linha_idx", { ascending: true })
-      .range(from, from + pageSize - 1);
-
-    if (error) throw error;
-
-    const chunk = Array.isArray(data) ? data : [];
-    allRows.push(...chunk);
-
-    if (chunk.length < pageSize) break;
-    from += pageSize;
-  }
+  if (error) throw error;
 
   const headers = [
-    "LINE",
-    "IDP",
-    "ESTADO",
-    "CIDADE",
-    "REGIAO_CIDADE",
-    "TF1",
-    "TF2",
-    "STATUS",
-    "OBSERVACAO",
-    "DT_ALTERACAO",
-    "Nº PESQ."
+    "LINE", "IDP", "ESTADO", "CIDADE", "REGIAO_CIDADE",
+    "TF1", "TF2", "STATUS", "OBSERVACAO", "DT_ALTERACAO", "Nº PESQ."
   ];
 
   function esc(v) {
@@ -212,23 +192,22 @@ async function obterCsvOperacional(arquivoKey, forceReload = false) {
     return s;
   }
 
-  const linhas = allRows.map((r, idx) => {
-    return [
-      esc(r.line ?? idx + 1),
-      esc(r.idp ?? ""),
-      esc(r.estado ?? ""),
-      esc(r.cidade ?? ""),
-      esc(r.regiao_cidade ?? ""),
-      esc(r.tf1 ?? ""),
-      esc(r.tf2 ?? ""),
-      esc(r.status ?? ""),
-      esc(r.observacao ?? ""),
-      esc(r.dt_alteracao ?? ""),
-      esc(r.pesquisador ?? "SEM PARTE")
-    ].join(",");
-  });
+  const linhas = (data || []).map((r, idx) => [
+    esc(r.line ?? idx + 1),
+    esc(r.idp ?? ""),
+    esc(r.estado ?? ""),
+    esc(r.cidade ?? ""),
+    esc(r.regiao_cidade ?? ""),
+    esc(r.tf1 ?? ""),
+    esc(r.tf2 ?? ""),
+    esc(r.status ?? ""),
+    esc(r.observacao ?? ""),
+    esc(r.dt_alteracao ?? ""),
+    esc(r.pesquisador ?? "SEM PARTE")
+  ].join(","));
 
   const csv = [headers.join(","), ...linhas].join("\n");
+
   cacheCsvOperacional.set(key, csv);
   return csv;
 }
@@ -324,14 +303,34 @@ function iniciarRealtime() {
     .on(
       "postgres_changes",
       {
-        event: "*",
+        event: "UPDATE",
         schema: "public",
         table: TABELA,
+        filter: `owner_id=eq.${ownerId}`
       },
       async (payload) => {
-        const row = payload?.new || payload?.old || {};
-        const rowOwnerId = String(row.owner_id ?? "").trim();
-        if (rowOwnerId && rowOwnerId !== ownerId) return;
+        const row = payload?.new || {};
+        if (!row?.arquivo_key) return;
+
+        // evita recarregar à toa quando só mudou campo irrelevante
+        const arquivoLocal = arquivosAtuais.find(
+          (x) => String(x.arquivoKey) === String(row.arquivo_key)
+        );
+
+        const atualizadoNovo = String(row.atualizado_em ?? "");
+        const atualizadoAtual = String(arquivoLocal?.atualizadoEm ?? "");
+
+        const filtroNovo = JSON.stringify(row.pesquisadores_desmarcados ?? []);
+        const filtroAtual = JSON.stringify(arquivoLocal?.pesquisadoresDesmarcados ?? []);
+
+        if (
+          arquivoLocal &&
+          atualizadoNovo === atualizadoAtual &&
+          filtroNovo === filtroAtual
+        ) {
+          return;
+        }
+
         await carregarTudo(false);
       }
     )
@@ -350,6 +349,7 @@ function encerrarRealtime() {
 // ======================
 // RENDER TABELA + AÇÕES
 // ======================
+
 function renderTabelaArquivos(lista) {
   if (!corpoTabelaArquivos) return;
 
@@ -522,6 +522,7 @@ function removerDaListaLocal(arquivoKey) {
 // VER ARQUIVO = RELATÓRIO
 // ======================
 async function verArquivoLocal(arquivoKey) {
+  encerrarRealtime();
   limparRelatorioMaster();
 
   const arq = arquivosAtuais.find((x) => String(x.arquivoKey) === String(arquivoKey));
@@ -534,7 +535,7 @@ async function verArquivoLocal(arquivoKey) {
   }
 
   try {
-    const csvOperacional = await obterCsvOperacional(arquivoKey, true);
+    const csvOperacional = await obterCsvOperacional(arquivoKey);
     relatorioAtualBase = gerarRelatorioCsv(csvOperacional || "");
   } catch (e) {
     console.error("Erro ao carregar CSV operacional:", e);
@@ -556,6 +557,7 @@ async function verArquivoLocal(arquivoKey) {
   dropdownPesquisadoresAberto = false;
   atualizarRelatorioFiltrado();
   abrirDialog(modalVer);
+  encerrarRealtime();
 }
 
 async function recarregarModalVer() {
@@ -622,6 +624,15 @@ async function recarregarModalVer() {
       btnRecarregarVer.innerHTML = `<i class="fa-solid fa-rotate-right"></i> Recarregar`;
     }
   }
+
+  btnFecharVer?.addEventListener("click", () => {
+    iniciarRealtime();
+    relatorioAtualBase = null;
+    pesquisadoresSelecionados = new Set();
+    arquivoSelecionadoVerKey = null;
+    dropdownPesquisadoresAberto = false;
+    fecharDialog(modalVer);
+  });
 }
 
 function atualizarRelatorioFiltrado() {
@@ -893,19 +904,20 @@ async function salvarFiltroPesquisadoresNoBanco(arquivoKey) {
     (x) => String(x.arquivoKey || "").trim() === String(arquivoKey || "").trim()
   );
 
-  if (!arq) {
-    console.warn("Arquivo não encontrado em arquivosAtuais", { arquivoKey });
-    return false;
-  }
-
-  const keyTrimmed = String(arquivoKey || "").trim();
-  const ownerTrimmed = String(arq.ownerId || arq.owner_id || "").trim();
+  if (!arq) return false;
 
   const todos = (relatorioAtualBase.tabelaPesquisadores || [])
     .map((item) => String(item.parte || "").trim())
     .filter(Boolean);
 
   const desmarcados = todos.filter((parte) => !pesquisadoresSelecionados.has(parte));
+
+  const atualBanco = JSON.stringify(arq.pesquisadoresDesmarcados || []);
+  const novoValor = JSON.stringify(desmarcados);
+
+  if (atualBanco === novoValor) {
+    return true;
+  }
 
   arq.pesquisadoresDesmarcados = [...desmarcados];
 
@@ -917,8 +929,7 @@ async function salvarFiltroPesquisadoresNoBanco(arquivoKey) {
 
   salvandoFiltroPromise = (async () => {
     const payload = {
-      pesquisadores_desmarcados: desmarcados,
-      ultima_alteracao_em: new Date().toISOString()
+      pesquisadores_desmarcados: desmarcados
     };
 
     try {
@@ -1339,7 +1350,7 @@ async function baixarArquivoLocal(arquivoKey) {
     .replace(/\.xlsx$/i, "");
 
   try {
-    const csvOperacional = await obterCsvOperacional(arquivoKey, true);
+    const csvOperacional = await obterCsvOperacional(arquivoKey);
     salvarXlsxComoArquivoCsv(csvOperacional || "", `${base}.xlsx`);
   } catch (e) {
     console.error("Erro ao baixar arquivo operacional:", e);
@@ -1363,7 +1374,7 @@ async function abrirPartesLocal(arquivoKey) {
   }
 
   try {
-    const csvOperacional = await obterCsvOperacional(arquivoKey, true);
+    const csvOperacional = await obterCsvOperacional(arquivoKey);
     const partes = gerarPartesDoCsv(csvOperacional || "", "Nº PESQ.");
 
     if (!partes.length) {
