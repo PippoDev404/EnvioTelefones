@@ -27,6 +27,7 @@ let generatedBlob = null;
 let generatedFileName = "";
 
 const CATEGORY_PRIORITY = ["PESQUISA", "VIVO", "CLARO", "OI", "TIM", "BRASIL"];
+const SOBRA_LABEL = "SOBRA";
 
 hasCotaSelect?.addEventListener("change", syncModeUI);
 addDayBtn?.addEventListener("click", () => createManualDayCard());
@@ -94,7 +95,8 @@ function createManualDayCard(data = {}) {
         </div>
 
         <div class="day-help">
-            No modo sem cota, cada P recebe telefones na ordem: PESQUISA, VIVO, CLARO, OI, TIM, BRASIL.
+            No modo sem cota, os números são distribuídos em rodízio entre todos os P, seguindo a ordem:
+            PESQUISA, VIVO, CLARO, OI, TIM, BRASIL.
         </div>
     `;
 
@@ -293,7 +295,9 @@ function clearColumnsInRows(rows, dataStartIndex, targetIndexes = []) {
 }
 
 function ensureRequiredColumn(index, name) {
-    return index !== -1 ? true : (() => { throw new Error(`Não encontrei a coluna "${name}".`); })();
+    return index !== -1 ? true : (() => {
+        throw new Error(`Não encontrei a coluna "${name}".`);
+    })();
 }
 
 function getMaxNumbersPerPesq() {
@@ -344,8 +348,34 @@ function sortRowsByCategory(rows) {
     });
 }
 
-function sortGlobalRows(rows) {
-    return sortRowsByCategory(rows);
+function getPesqSortOrder(pesqValue) {
+    const normalized = String(pesqValue ?? "").trim().toUpperCase();
+
+    if (normalized === SOBRA_LABEL) return Number.MAX_SAFE_INTEGER - 1;
+    if (!normalized) return Number.MAX_SAFE_INTEGER;
+
+    const match = normalized.match(/^P(\d+)$/);
+    if (match) return Number(match[1]);
+
+    return Number.MAX_SAFE_INTEGER - 2;
+}
+
+function sortFinalRows(rows) {
+    return [...rows].sort((a, b) => {
+        const pesqDiff = getPesqSortOrder(a[8]) - getPesqSortOrder(b[8]);
+        if (pesqDiff !== 0) return pesqDiff;
+
+        const aDate = String(a[9] ?? "");
+        const bDate = String(b[9] ?? "");
+        if (aDate !== bDate) return aDate.localeCompare(bDate, "pt-BR");
+
+        const aCategoryDiff = getCategoryPriorityIndex(a[5]) - getCategoryPriorityIndex(b[5]);
+        if (aCategoryDiff !== 0) return aCategoryDiff;
+
+        const aIdp = String(a[0] ?? "");
+        const bIdp = String(b[0] ?? "");
+        return aIdp.localeCompare(bIdp, "pt-BR", { numeric: true, sensitivity: "base" });
+    });
 }
 
 function buildFinalRows(rows, dataStartIndex, columnIndexes, diaPesqColIndex) {
@@ -367,6 +397,7 @@ function buildFinalRows(rows, dataStartIndex, columnIndexes, diaPesqColIndex) {
             row[columnIndexes.estado] ?? "",
             row[columnIndexes.regiao] ?? "",
             row[columnIndexes.setor] ?? "",
+            row[columnIndexes.categoria] ?? "",
             row[columnIndexes.tf1] ?? "",
             row[columnIndexes.tf2] ?? "",
             pesqValue,
@@ -374,7 +405,7 @@ function buildFinalRows(rows, dataStartIndex, columnIndexes, diaPesqColIndex) {
         ]);
     }
 
-    return finalRows;
+    return sortFinalRows(finalRows);
 }
 
 function autoFitSheetColumns(sheetData, worksheet) {
@@ -505,7 +536,135 @@ function buildPoolsByMode(usefulRows) {
 }
 
 /* =========================
-   NOVA LÓGICA DE RATEIO POR DATA NO MODO COTA
+   DISTRIBUIÇÃO
+========================= */
+
+function buildOrderedCategoryGroups(rows) {
+    const grouped = new Map();
+    const others = new Map();
+
+    rows.forEach((item) => {
+        const normalized = normalizeCategory(item.categoria);
+
+        if (CATEGORY_PRIORITY.includes(normalized)) {
+            if (!grouped.has(normalized)) grouped.set(normalized, []);
+            grouped.get(normalized).push(item);
+        } else {
+            if (!others.has(normalized)) others.set(normalized, []);
+            others.get(normalized).push(item);
+        }
+    });
+
+    const orderedGroups = [];
+
+    CATEGORY_PRIORITY.forEach((category) => {
+        const arr = grouped.get(category) || [];
+        if (arr.length) {
+            orderedGroups.push({
+                category,
+                rows: [...arr].sort((a, b) => a.originalIndex - b.originalIndex)
+            });
+        }
+    });
+
+    [...others.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .forEach(([category, arr]) => {
+            orderedGroups.push({
+                category,
+                rows: [...arr].sort((a, b) => a.originalIndex - b.originalIndex)
+            });
+        });
+
+    return orderedGroups;
+}
+
+function distributeRowsByCategoryRoundRobin(rowsPool, targets) {
+    const categoryGroups = buildOrderedCategoryGroups(rowsPool);
+    let totalAssigned = 0;
+
+    for (let groupIndex = 0; groupIndex < categoryGroups.length; groupIndex++) {
+        const group = categoryGroups[groupIndex];
+        let cursor = 0;
+
+        while (cursor < group.rows.length) {
+            const targetsNeedingRows = targets.filter((target) => target.remaining > 0);
+
+            if (!targetsNeedingRows.length) {
+                const remainingPool = [];
+
+                for (let i = groupIndex; i < categoryGroups.length; i++) {
+                    const currentGroup = categoryGroups[i];
+                    if (i === groupIndex) {
+                        remainingPool.push(...currentGroup.rows.slice(cursor));
+                    } else {
+                        remainingPool.push(...currentGroup.rows);
+                    }
+                }
+
+                return { totalAssigned, remainingPool };
+            }
+
+            let assignedInThisRound = false;
+
+            for (const target of targetsNeedingRows) {
+                if (cursor >= group.rows.length) break;
+                if (target.remaining <= 0) continue;
+
+                const rowItem = group.rows[cursor++];
+                target.rows.push(rowItem);
+                target.remaining -= 1;
+                totalAssigned += 1;
+                assignedInThisRound = true;
+            }
+
+            if (!assignedInThisRound) break;
+        }
+    }
+
+    const assignedSet = new Set(targets.flatMap((t) => t.rows));
+    const remainingPool = rowsPool.filter((row) => !assignedSet.has(row));
+
+    return { totalAssigned, remainingPool };
+}
+
+function assignTargetsToSheet(targets, rows, pesqCol, dataPesquisaCol) {
+    let total = 0;
+
+    targets.forEach((target) => {
+        target.rows.forEach((item) => {
+            const matrixIndex = item.rowNumberExcel - 1;
+            if (!rows[matrixIndex]) rows[matrixIndex] = [];
+            rows[matrixIndex][pesqCol] = target.pesquisador;
+            rows[matrixIndex][dataPesquisaCol] = target.date;
+            total += 1;
+        });
+    });
+
+    return total;
+}
+
+function markUnusedRowsAsSobra(usefulRows, rows, pesqCol, dataPesquisaCol) {
+    let sobraCount = 0;
+
+    usefulRows.forEach((item) => {
+        const matrixIndex = item.rowNumberExcel - 1;
+        if (!rows[matrixIndex]) rows[matrixIndex] = [];
+
+        const currentPesq = String(rows[matrixIndex][pesqCol] ?? "").trim();
+
+        if (!currentPesq) {
+            rows[matrixIndex][pesqCol] = SOBRA_LABEL;
+            rows[matrixIndex][dataPesquisaCol] = "";
+            sobraCount += 1;
+        }
+    });
+
+    return sobraCount;
+}
+
+/* =========================
+   RATEIO POR DATA NO MODO COTA
 ========================= */
 
 function groupDemandsByBucketAcrossDates(cotaRowsByDate) {
@@ -660,7 +819,15 @@ async function handleProcess() {
         const categoriaCol = findHeaderIndex(headerRow, ["CATEGORIA"]);
         const tf1Col = findHeaderIndex(headerRow, ["TF1"]);
         const tf2Col = findHeaderIndex(headerRow, ["TF2"]);
-        const pesqCol = findHeaderIndex(headerRow, ["Nº PESQ.", "Nº PESQ", "NO PESQ.", "NO PESQ", "NUMERO PESQ", "N° PESQ", "N°PESQ"]);
+        const pesqCol = findHeaderIndex(headerRow, [
+            "Nº PESQ.",
+            "Nº PESQ",
+            "NO PESQ.",
+            "NO PESQ",
+            "NUMERO PESQ",
+            "N° PESQ",
+            "N°PESQ"
+        ]);
         const dataPesquisaCol = findHeaderIndex(headerRow, [
             "DIA PESQ",
             "DIA DA PESQ",
@@ -720,7 +887,10 @@ async function handleProcess() {
             });
         }
 
-        const finalHeaders = ["IDP", "CIDADE", "ESTADO", "REGIÃO", "SETOR", "TF1", "TF2", "N° PESQ", "DIA PESQ"];
+        const sobraCount = markUnusedRowsAsSobra(usefulRows, rows, pesqCol, dataPesquisaCol);
+        addLog(`Linhas marcadas como SOBRA: ${sobraCount}`, sobraCount > 0 ? "ok" : "warn");
+
+        const finalHeaders = ["IDP", "CIDADE", "ESTADO", "REGIÃO", "SETOR", "CATEGORIA", "TF1", "TF2", "N° PESQ", "DIA PESQ"];
         const finalDataRows = buildFinalRows(
             rows,
             dataStartIndex,
@@ -730,6 +900,7 @@ async function handleProcess() {
                 estado: estadoCol,
                 regiao: regiaoCol,
                 setor: setorCol,
+                categoria: categoriaCol,
                 tf1: tf1Col,
                 tf2: tf2Col,
                 pesq: pesqCol,
@@ -800,38 +971,53 @@ function processWithoutCota({
 
     const totalPesquisadores = dayConfigs.reduce((sum, item) => sum + item.pCount, 0);
     const totalNeeded = totalPesquisadores * maxPerPesq;
-    const sortedPool = sortGlobalRows(usefulRows);
 
     addLog(`Total de pesquisadores informados: ${totalPesquisadores}`, "ok");
     addLog(`Telefones necessários: ${totalNeeded}`, "ok");
 
-    if (sortedPool.length < totalNeeded) {
-        const maxPerP = computeMaxPerPByAvailable(sortedPool.length, totalPesquisadores);
+    if (usefulRows.length < totalNeeded) {
+        const maxPerP = computeMaxPerPByAvailable(usefulRows.length, totalPesquisadores);
         throw new Error(`O máximo de telefones por P são ${maxPerP} de acordo com a quantidade de linhas.`);
     }
 
-    let cursor = 0;
-    let totalAtribuido = 0;
+    const targets = [];
 
-    dayConfigs.forEach((dayConfig, dayIndex) => {
+    dayConfigs.forEach((dayConfig) => {
         const pesquisadores = createPesquisadoresFromCount(dayConfig.pCount);
 
         pesquisadores.forEach((pesquisador) => {
-            const rowsToAssign = sortedPool.slice(cursor, cursor + maxPerPesq);
-            cursor += maxPerPesq;
-
-            assignRowsToPesquisador(rowsToAssign, pesquisador, dayConfig.date, rows, pesqCol, dataPesquisaCol);
-            totalAtribuido += rowsToAssign.length;
+            targets.push({
+                pesquisador,
+                date: dayConfig.date,
+                remaining: maxPerPesq,
+                rows: []
+            });
         });
+    });
+
+    distributeRowsByCategoryRoundRobin(usefulRows, targets);
+
+    const totalRemaining = targets.reduce((sum, target) => sum + target.remaining, 0);
+    if (totalRemaining > 0) {
+        const maxPerP = computeMaxPerPByAvailable(usefulRows.length, totalPesquisadores);
+        throw new Error(`O máximo de telefones por P são ${maxPerP} de acordo com a quantidade de linhas.`);
+    }
+
+    const totalAtribuido = assignTargetsToSheet(targets, rows, pesqCol, dataPesquisaCol);
+
+    dayConfigs.forEach((dayConfig, dayIndex) => {
+        const totalNoDia = targets
+            .filter((t) => t.date === dayConfig.date)
+            .reduce((sum, t) => sum + t.rows.length, 0);
 
         addLog(
-            `Dia ${dayIndex + 1} (${dayConfig.date}): ${pesquisadores.length} pesquisadores preenchidos com ${maxPerPesq} telefones cada.`,
+            `Dia ${dayIndex + 1} (${dayConfig.date}): ${dayConfig.pCount} pesquisadores preenchidos com ${Math.floor(totalNoDia / dayConfig.pCount)} telefones em média.`,
             "ok"
         );
     });
 
     addLog(`Total preenchido em N° PESQ: ${totalAtribuido}`, "ok");
-    addLog(`Ordem de uso da categoria: ${CATEGORY_PRIORITY.join(" → ")}`, "ok");
+    addLog(`Distribuição por categoria em rodízio: ${CATEGORY_PRIORITY.join(" → ")}`, "ok");
 }
 
 async function processWithCota({
@@ -907,29 +1093,35 @@ async function processWithCota({
 
         let totalData = 0;
 
-        demands.forEach((demand) => {
-            const bucketKey = `${demand.setorMode}::${demand.setorKey}`;
+        for (const [bucketKey] of totalsByBucket.entries()) {
+            const bucketDemands = demands.filter((demand) => `${demand.setorMode}::${demand.setorKey}` === bucketKey);
             const multiplier = multiplierByBucket.get(bucketKey) || 0;
-            if (multiplier <= 0) return;
-
-            const qtyTelefones = Math.floor(demand.questionarios * multiplier);
-            if (qtyTelefones <= 0) return;
+            if (multiplier <= 0) continue;
 
             const shared = sharedPools.get(bucketKey);
             const poolForDate = shared?.perDatePools?.get(date) || [];
+            if (!poolForDate.length) continue;
 
-            const rowsToAssign = poolForDate.splice(0, qtyTelefones);
+            const targets = bucketDemands.map((demand) => ({
+                pesquisador: demand.pesquisador,
+                date,
+                remaining: Math.floor(demand.questionarios * multiplier),
+                rows: []
+            }));
 
-            assignRowsToPesquisador(rowsToAssign, demand.pesquisador, date, rows, pesqCol, dataPesquisaCol);
-            totalData += rowsToAssign.length;
-        });
+            const { totalAssigned, remainingPool } = distributeRowsByCategoryRoundRobin(poolForDate, targets);
 
-        totalAtribuido += totalData;
+            shared.perDatePools.set(date, remainingPool);
+
+            totalData += totalAssigned;
+            totalAtribuido += assignTargetsToSheet(targets, rows, pesqCol, dataPesquisaCol);
+        }
+
         addLog(`Data ${date}: total preenchido ${totalData}.`, "ok");
     }
 
     addLog(`Total preenchido em N° PESQ: ${totalAtribuido}`, "ok");
-    addLog(`Ordem de uso da categoria por grupo: ${CATEGORY_PRIORITY.join(" → ")}`, "ok");
+    addLog(`Distribuição por categoria em rodízio por grupo: ${CATEGORY_PRIORITY.join(" → ")}`, "ok");
 }
 
 function renderPreview(headers, dataRows, limit = 60) {
