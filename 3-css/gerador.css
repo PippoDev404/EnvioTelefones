@@ -187,6 +187,7 @@ body.active .badge.success {
 }
 
 .field input::file-selector-button {
+    margin-top: 5px;
     margin-right: 12px;
     border: none;
     background: var(--primary);
@@ -196,8 +197,6 @@ body.active .badge.success {
     border-radius: 10px;
     cursor: pointer;
 }
-
-
 
 .actions {
     display: flex;
