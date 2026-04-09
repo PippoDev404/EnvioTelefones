@@ -51,14 +51,18 @@ function syncModeUI() {
         el.classList.toggle("hidden", hasCota);
     });
 
-    manualDaysSection.classList.toggle("hidden", hasCota);
+    if (manualDaysSection) {
+        manualDaysSection.classList.toggle("hidden", hasCota);
+    }
 
-    if (!hasCota && !manualDaysList.children.length) {
+    if (!hasCota && manualDaysList && !manualDaysList.children.length) {
         createManualDayCard();
     }
 }
 
 function createManualDayCard(data = {}) {
+    if (!manualDaysList) return;
+
     manualDayCounter += 1;
     const card = document.createElement("div");
     card.className = "day-card";
@@ -95,7 +99,7 @@ function createManualDayCard(data = {}) {
         </div>
 
         <div class="day-help">
-            No modo sem cota, os números são distribuídos em rodízio entre todos os P, seguindo a ordem:
+            Em qualquer modo, os telefones são sempre distribuídos por categoria em rodízio:
             PESQUISA, VIVO, CLARO, OI, TIM, BRASIL.
         </div>
     `;
@@ -113,6 +117,8 @@ function createManualDayCard(data = {}) {
 }
 
 function refreshManualDayTitles() {
+    if (!manualDaysList) return;
+
     [...manualDaysList.children].forEach((card, index) => {
         const title = card.querySelector(".day-card-title");
         if (title) title.textContent = `Dia de pesquisa ${index + 1}`;
@@ -124,10 +130,12 @@ function refreshManualDayTitles() {
 ========================= */
 
 function showLog() {
-    logBox.classList.remove("hidden");
+    if (logBox) logBox.classList.remove("hidden");
 }
 
 function addLog(message, type = "ok") {
+    if (!logBox) return;
+
     showLog();
 
     let ul = logBox.querySelector("ul");
@@ -146,6 +154,7 @@ function addLog(message, type = "ok") {
 }
 
 function clearLog() {
+    if (!logBox) return;
     logBox.innerHTML = "";
     logBox.classList.add("hidden");
 }
@@ -242,11 +251,10 @@ function findMainSheetName(workbook) {
     const names = workbook.SheetNames || [];
     if (!names.length) return null;
 
-    const preferred = names.find((name) =>
-        /COM.*PRIV.*FAC.*PESQ/i.test(normalizeText(name))
+    const telefones = names.find(
+        (name) => normalizeText(name) === "TELEFONES"
     );
-
-    if (preferred) return preferred;
+    if (telefones) return telefones;
 
     const firstNotContagem = names.find(
         (name) => normalizeText(name) !== "CONTAGEM"
@@ -309,6 +317,8 @@ function getMaxNumbersPerPesq() {
 }
 
 function getManualDayConfigs() {
+    if (!manualDaysList) return [];
+
     const cards = [...manualDaysList.querySelectorAll(".day-card")];
 
     return cards
@@ -536,7 +546,7 @@ function buildPoolsByMode(usefulRows) {
 }
 
 /* =========================
-   DISTRIBUIÇÃO
+   DISTRIBUIÇÃO POR CATEGORIA
 ========================= */
 
 function buildOrderedCategoryGroups(rows) {
@@ -752,10 +762,10 @@ function buildSharedPoolsForCota(usefulRows, cotaRowsByDate) {
 async function handleProcess() {
     try {
         clearLog();
-        resultSection.classList.add("hidden");
-        previewHead.innerHTML = "";
-        previewBody.innerHTML = "";
-        downloadBtn.classList.add("hidden");
+        if (resultSection) resultSection.classList.add("hidden");
+        if (previewHead) previewHead.innerHTML = "";
+        if (previewBody) previewBody.innerHTML = "";
+        if (downloadBtn) downloadBtn.classList.add("hidden");
         generatedBlob = null;
         generatedFileName = "";
 
@@ -934,7 +944,7 @@ async function handleProcess() {
             type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         });
 
-        downloadBtn.classList.remove("hidden");
+        if (downloadBtn) downloadBtn.classList.remove("hidden");
         addLog(`Arquivo final pronto para download: ${generatedFileName}`, "ok");
     } catch (error) {
         console.error(error);
@@ -995,7 +1005,7 @@ function processWithoutCota({
         });
     });
 
-    distributeRowsByCategoryRoundRobin(usefulRows, targets);
+    const { totalAssigned } = distributeRowsByCategoryRoundRobin(usefulRows, targets);
 
     const totalRemaining = targets.reduce((sum, target) => sum + target.remaining, 0);
     if (totalRemaining > 0) {
@@ -1017,6 +1027,7 @@ function processWithoutCota({
     });
 
     addLog(`Total preenchido em N° PESQ: ${totalAtribuido}`, "ok");
+    addLog(`Telefones usados na distribuição por categoria: ${totalAssigned}`, "ok");
     addLog(`Distribuição por categoria em rodízio: ${CATEGORY_PRIORITY.join(" → ")}`, "ok");
 }
 
@@ -1115,6 +1126,11 @@ async function processWithCota({
 
             totalData += totalAssigned;
             totalAtribuido += assignTargetsToSheet(targets, rows, pesqCol, dataPesquisaCol);
+
+            addLog(
+                `Data ${date} | Grupo ${bucketKey}: ${totalAssigned} telefones distribuídos em rodízio por categoria.`,
+                totalAssigned > 0 ? "ok" : "warn"
+            );
         }
 
         addLog(`Data ${date}: total preenchido ${totalData}.`, "ok");
@@ -1125,6 +1141,8 @@ async function processWithCota({
 }
 
 function renderPreview(headers, dataRows, limit = 60) {
+    if (!previewHead || !previewBody || !resultSection) return;
+
     previewHead.innerHTML = "";
     previewBody.innerHTML = "";
 
