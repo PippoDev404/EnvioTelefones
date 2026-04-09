@@ -1,969 +1,958 @@
 import { requireAuth, logout } from "../8-src/auth.js";
-import { supabase } from "../8-src/supabaseClient.js";
 
 const user = await requireAuth({ redirectTo: "../7-login/login.html" });
 if (!user) throw new Error("Sem sessão");
 
 document.querySelector("#btnLogout")?.addEventListener("click", () => logout());
 
-const inputArquivo = document.getElementById("inputArquivo");
-const areaDrop = document.getElementById("areaDrop");
-const btnSelecionarArquivo = document.getElementById("btnSelecionarArquivo");
-const btnTrocarArquivo = document.getElementById("btnTrocarArquivo");
-const btnRemoverArquivo = document.getElementById("btnRemoverArquivo");
+const baseFileInput = document.querySelector("#baseFile");
+const cotaFileInput = document.querySelector("#cotaFile");
+const hasCotaSelect = document.querySelector("#hasCota");
+const maxNumbersPerPesqInput = document.querySelector("#maxNumbersPerPesq");
+const processBtn = document.querySelector("#processBtn");
+const downloadBtn = document.querySelector("#downloadBtn");
 
-const uploadStateEmpty = document.getElementById("uploadStateEmpty");
-const uploadStateFilled = document.getElementById("uploadStateFilled");
-const arquivoRecebidoNome = document.getElementById("arquivoRecebidoNome");
-const arquivoRecebidoMeta = document.getElementById("arquivoRecebidoMeta");
+const manualDaysSection = document.querySelector("#manualDaysSection");
+const manualDaysList = document.querySelector("#manualDaysList");
+const addDayBtn = document.querySelector("#addDayBtn");
 
-const btnProcessarArquivo = document.getElementById("btnProcessarArquivo");
+const logBox = document.querySelector("#logBox");
+const resultSection = document.querySelector("#resultSection");
+const previewTable = document.querySelector("#previewTable");
+const previewHead = previewTable.querySelector("thead");
+const previewBody = previewTable.querySelector("tbody");
 
-const emptyFiles = document.getElementById("emptyFiles");
-const listaArquivos = document.getElementById("listaArquivos");
+let manualDayCounter = 0;
+let generatedBlob = null;
+let generatedFileName = "";
 
-const modalPreview = document.getElementById("modalPreview");
-const modalBackdrop = document.getElementById("modalBackdrop");
-const btnFecharModal = document.getElementById("btnFecharModal");
-const arquivoPreviewHead = document.getElementById("arquivoPreviewHead");
-const arquivoPreviewBody = document.getElementById("arquivoPreviewBody");
+const CATEGORY_PRIORITY = ["PESQUISA", "VIVO", "CLARO", "OI", "TIM", "BRASIL"];
 
-const modalConfirmacaoRemocao = document.getElementById("modalConfirmacaoRemocao");
-const modalConfirmacaoBackdrop = document.getElementById("modalConfirmacaoBackdrop");
-const btnCancelarRemocao = document.getElementById("btnCancelarRemocao");
-const btnConfirmarRemocao = document.getElementById("btnConfirmarRemocao");
+hasCotaSelect?.addEventListener("change", syncModeUI);
+addDayBtn?.addEventListener("click", () => createManualDayCard());
+processBtn?.addEventListener("click", handleProcess);
+downloadBtn?.addEventListener("click", handleDownload);
 
-const selectTipoCota = document.getElementById("selectTipoCota");
-const tipoCotaInfo = document.getElementById("tipoCotaInfo");
+syncModeUI();
 
-const selectEstado = document.getElementById("selectEstado");
-const selectCidade = document.getElementById("selectCidade");
+/* =========================
+   UI
+========================= */
 
-let arquivoSelecionado = null;
-let arquivoGeradoUnico = null;
+function syncModeUI() {
+    const hasCota = hasCotaSelect?.value === "sim";
 
-inicializar();
+    document.querySelectorAll(".cota-only").forEach((el) => {
+        el.classList.toggle("hidden", !hasCota);
+    });
 
-function inicializar() {
-  inicializarUpload();
-  inicializarProcessamentoUnico();
-  inicializarModal();
-  inicializarModalRemocao();
-  inicializarFiltrosConsulta();
-  atualizarEstadoArquivo();
-}
+    document.querySelectorAll(".no-cota-only").forEach((el) => {
+        el.classList.toggle("hidden", hasCota);
+    });
 
-async function inicializarFiltrosConsulta() {
-  await carregarEstados();
-  await carregarCidades();
+    manualDaysSection.classList.toggle("hidden", hasCota);
 
-  selectEstado?.addEventListener("change", async () => {
-    await carregarCidades(selectEstado.value);
-  });
-}
-
-async function carregarEstados() {
-  if (!selectEstado) return;
-
-  try {
-    const { data, error } = await supabase
-      .from("base_mestra")
-      .select("estado")
-      .not("estado", "is", null)
-      .limit(50000);
-
-    if (error) throw error;
-
-    const estadosUnicos = [...new Set(
-      (data || [])
-        .map((item) => String(item.estado || "").trim())
-        .filter(Boolean)
-    )].sort((a, b) => a.localeCompare(b, "pt-BR"));
-
-    selectEstado.innerHTML =
-      `<option value="">Todos os estados</option>` +
-      estadosUnicos
-        .map((estado) => `<option value="${escapeHtml(estado)}">${escapeHtml(estado)}</option>`)
-        .join("");
-  } catch (error) {
-    console.error("Erro ao carregar estados:", error);
-  }
-}
-
-async function carregarCidades(estadoSelecionado = "") {
-  if (!selectCidade) return;
-
-  try {
-    let query = supabase
-      .from("base_mestra")
-      .select("cidade")
-      .not("cidade", "is", null)
-      .limit(50000);
-
-    if (estadoSelecionado) {
-      query = query.eq("estado", estadoSelecionado);
+    if (!hasCota && !manualDaysList.children.length) {
+        createManualDayCard();
     }
-
-    const { data, error } = await query;
-    if (error) throw error;
-
-    const cidadesUnicas = [...new Set(
-      (data || [])
-        .map((item) => String(item.cidade || "").trim())
-        .filter(Boolean)
-    )].sort((a, b) => a.localeCompare(b, "pt-BR"));
-
-    selectCidade.innerHTML =
-      `<option value="">Todas as cidades</option>` +
-      cidadesUnicas
-        .map((cidade) => `<option value="${escapeHtml(cidade)}">${escapeHtml(cidade)}</option>`)
-        .join("");
-  } catch (error) {
-    console.error("Erro ao carregar cidades:", error);
-  }
 }
 
-function inicializarUpload() {
-  btnSelecionarArquivo?.addEventListener("click", () => {
-    inputArquivo?.click();
-  });
-
-  btnTrocarArquivo?.addEventListener("click", () => {
-    inputArquivo?.click();
-  });
-
-  btnRemoverArquivo?.addEventListener("click", () => {
-    abrirModalConfirmacaoRemocao();
-  });
-
-  inputArquivo?.addEventListener("change", (event) => {
-    const file = event.target.files?.[0] || null;
-    definirArquivoSelecionado(file);
-  });
-
-  if (areaDrop) {
-    areaDrop.addEventListener("click", (event) => {
-      const clicouEmBotao = event.target.closest("button");
-      if (!clicouEmBotao) inputArquivo?.click();
-    });
-
-    areaDrop.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        inputArquivo?.click();
-      }
-    });
-
-    ["dragenter", "dragover"].forEach((evento) => {
-      areaDrop.addEventListener(evento, (event) => {
-        event.preventDefault();
-        areaDrop.classList.add("dragover");
-      });
-    });
-
-    ["dragleave", "drop"].forEach((evento) => {
-      areaDrop.addEventListener(evento, (event) => {
-        event.preventDefault();
-
-        if (evento === "dragleave") {
-          const destino = event.relatedTarget;
-          if (destino && areaDrop.contains(destino)) return;
-        }
-
-        areaDrop.classList.remove("dragover");
-      });
-    });
-
-    areaDrop.addEventListener("drop", (event) => {
-      const file = event.dataTransfer?.files?.[0] || null;
-      if (!file) return;
-
-      definirArquivoSelecionado(file);
-
-      if (inputArquivo) {
-        try {
-          const dt = new DataTransfer();
-          dt.items.add(file);
-          inputArquivo.files = dt.files;
-        } catch (error) {
-          console.warn("Não foi possível sincronizar o arquivo no input.", error);
-        }
-      }
-    });
-  }
-}
-
-function inicializarProcessamentoUnico() {
-  if (!btnProcessarArquivo) return;
-
-  btnProcessarArquivo.addEventListener("click", async () => {
-    if (!arquivoSelecionado) {
-      alert("Selecione ou arraste um arquivo de cota antes de continuar.");
-      return;
-    }
-
-    try {
-      setBotaoCarregando(btnProcessarArquivo, true, "Lendo e gerando...");
-
-      const cotas = await lerArquivoCota(arquivoSelecionado);
-
-      if (!cotas.length) {
-        alert("A cota foi lida, mas nenhuma linha válida foi encontrada.");
-        return;
-      }
-
-      const tipoDetectado = cotas[0]?.tipoCota || "desconhecido";
-      atualizarInfoTipoCota(tipoDetectado);
-
-      const registrosEncontrados = await buscarRegistrosParaCota(cotas);
-
-      if (!registrosEncontrados.length) {
-        alert("Nenhum registro foi encontrado no banco para essa cota.");
-        return;
-      }
-
-      const agora = new Date();
-
-      arquivoGeradoUnico = {
-        id: agora.getTime(),
-        nomeArquivo: montarNomeArquivoUnico(arquivoSelecionado?.name, agora),
-        origem: arquivoSelecionado?.name || "cota.csv",
-        criadoEm: formatarDataHora(agora),
-        headers: [
-          "IDP",
-          "ESTADO",
-          "CIDADE",
-          "Cod_estado",
-          "Cod_municipio",
-          "Cod_meso",
-          "Cod_micro",
-          "REGIÃO CIDADE",
-          "SETOR DENTRO DA CIDADE",
-          "SEXO",
-          "IDADE",
-          "GRAU DE INSTRUÇÃO",
-          "OCUPAÇÃO",
-          "RENDA FAMILIAR",
-          "DATA DA PESQUISA",
-          "CATEGORIA",
-          "NOME",
-          "ENDEREÇO COMPLETO",
-          "ENDEREÇO",
-          "NÚMERO",
-          "BAIRRO",
-          "CEP",
-          "EMAIL",
-          "TF1",
-          "TF2",
-          "TF3",
-          "TF4",
-          "Nº PESQ.",
-          "DIA PESQ.",
-          "QT TF1",
-          "QT TF2",
-          "QT TF3",
-          "QT TF4"
-        ],
-        rows: registrosEncontrados.map(mapearRegistroParaLinhaFinal)
-      };
-
-      renderizarArquivoUnico();
-
-      alert(`Arquivo único gerado com sucesso. ${arquivoGeradoUnico.rows.length} linha(s) encontradas.`);
-    } catch (error) {
-      console.error("Erro ao processar a cota:", error);
-      alert(`Não foi possível processar a planilha: ${error.message || error}`);
-    } finally {
-      setBotaoCarregando(btnProcessarArquivo, false, "Ler e gerar arquivo");
-    }
-  });
-}
-
-function inicializarModal() {
-  btnFecharModal?.addEventListener("click", fecharModalPreview);
-  modalBackdrop?.addEventListener("click", fecharModalPreview);
-
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && modalPreview && !modalPreview.classList.contains("hidden")) {
-      fecharModalPreview();
-    }
-  });
-}
-
-function inicializarModalRemocao() {
-  btnCancelarRemocao?.addEventListener("click", fecharModalConfirmacaoRemocao);
-  modalConfirmacaoBackdrop?.addEventListener("click", fecharModalConfirmacaoRemocao);
-
-  btnConfirmarRemocao?.addEventListener("click", () => {
-    resetarArquivoSelecionado();
-    fecharModalConfirmacaoRemocao();
-  });
-
-  document.addEventListener("keydown", (event) => {
-    if (
-      event.key === "Escape" &&
-      modalConfirmacaoRemocao &&
-      !modalConfirmacaoRemocao.classList.contains("hidden")
-    ) {
-      fecharModalConfirmacaoRemocao();
-    }
-  });
-}
-
-function abrirModalConfirmacaoRemocao() {
-  const temAlgoParaRemover = Boolean(arquivoSelecionado || arquivoGeradoUnico);
-  if (!temAlgoParaRemover) return;
-
-  modalConfirmacaoRemocao?.classList.remove("hidden");
-  modalConfirmacaoRemocao?.setAttribute("aria-hidden", "false");
-}
-
-function fecharModalConfirmacaoRemocao() {
-  modalConfirmacaoRemocao?.classList.add("hidden");
-  modalConfirmacaoRemocao?.setAttribute("aria-hidden", "true");
-}
-
-function definirArquivoSelecionado(file) {
-  if (!file) {
-    resetarArquivoSelecionado();
-    return;
-  }
-
-  if (!ehArquivoPermitido(file)) {
-    alert("Envie um arquivo válido (.xlsx, .xls ou .csv).");
-    resetarArquivoSelecionado();
-    return;
-  }
-
-  arquivoSelecionado = file;
-  arquivoGeradoUnico = null;
-
-  if (arquivoRecebidoNome) arquivoRecebidoNome.textContent = file.name || "arquivo.xlsx";
-  if (arquivoRecebidoMeta) {
-    arquivoRecebidoMeta.textContent = `${formatarTamanhoArquivo(file.size)} • ${obterBadgeArquivo(file)}`;
-  }
-
-  limparArquivoUnico();
-  atualizarEstadoArquivo();
-
-  if (btnProcessarArquivo) {
-    btnProcessarArquivo.disabled = false;
-  }
-}
-
-function resetarArquivoSelecionado() {
-  arquivoSelecionado = null;
-  arquivoGeradoUnico = null;
-
-  if (inputArquivo) inputArquivo.value = "";
-  if (btnProcessarArquivo) btnProcessarArquivo.disabled = true;
-
-  limparArquivoSelecionadoVisual();
-  limparArquivoUnico();
-  fecharModalPreview();
-  atualizarEstadoArquivo();
-  atualizarInfoTipoCota("");
-}
-
-function atualizarEstadoArquivo() {
-  const temArquivo = Boolean(arquivoSelecionado);
-
-  areaDrop?.classList.toggle("has-file", temArquivo);
-
-  uploadStateEmpty?.classList.toggle("hidden", temArquivo);
-  uploadStateFilled?.classList.toggle("hidden", !temArquivo);
-
-  if (!temArquivo) {
-    if (arquivoRecebidoNome) arquivoRecebidoNome.textContent = "arquivo.xlsx";
-    if (arquivoRecebidoMeta) arquivoRecebidoMeta.textContent = "0 KB • XLSX";
-  }
-}
-
-function limparArquivoSelecionadoVisual() {
-  if (arquivoRecebidoNome) arquivoRecebidoNome.textContent = "arquivo.xlsx";
-  if (arquivoRecebidoMeta) arquivoRecebidoMeta.textContent = "0 KB • XLSX";
-}
-
-function limparArquivoUnico() {
-  arquivoGeradoUnico = null;
-
-  if (!listaArquivos || !emptyFiles) return;
-  listaArquivos.innerHTML = "";
-  listaArquivos.classList.add("hidden");
-  emptyFiles.classList.remove("hidden");
-}
-
-function atualizarInfoTipoCota(tipo) {
-  if (!tipoCotaInfo) return;
-
-  if (!tipo) {
-    tipoCotaInfo.textContent = "";
-    return;
-  }
-
-  const mapa = {
-    auto: "Automático",
-    numero: "Número",
-    estado: "Estado",
-    desconhecido: "Desconhecido"
-  };
-
-  tipoCotaInfo.textContent = `Tipo de cota: ${mapa[tipo] || tipo}`;
-}
-
-async function lerArquivoCota(file) {
-  const nome = file.name.toLowerCase();
-
-  let matriz = [];
-
-  if (nome.endsWith(".csv")) {
-    const texto = await lerTextoArquivoCsv(file);
-    matriz = texto
-      .split(/\r?\n/)
-      .map((linha) => separarLinhaCsv(linha))
-      .filter((linha) => linha.some((celula) => String(celula).trim() !== ""));
-  } else {
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: "array" });
-    const primeiraAba = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[primeiraAba];
-
-    matriz = XLSX.utils.sheet_to_json(worksheet, {
-      header: 1,
-      defval: ""
-    });
-  }
-
-  if (!matriz.length) return [];
-
-  const linhasNaoVazias = matriz.filter((linha) =>
-    Array.isArray(linha) && linha.some((celula) => String(celula).trim() !== "")
-  );
-
-  if (!linhasNaoVazias.length) return [];
-
-  const header = linhasNaoVazias[0].map((item) => normalizarCabecalho(item));
-  const linhas = linhasNaoVazias.slice(1);
-
-  const idx = {
-    dia: encontrarIndiceCabecalho(header, ["dia"]),
-    pesquisador: encontrarIndiceCabecalho(header, ["pesq", "pesq."]),
-    regiao: encontrarIndiceCabecalho(header, ["regiao", "regiao cidade", "regiao_cidade"]),
-    setor1: encontrarIndiceCabecalho(header, ["setores1", "setor1", "setor 1", "numero1", "numero 1", "estado1", "estado 1"]),
-    qt1: encontrarIndiceCabecalho(header, ["qt1", "qt 1", "quantidade1", "quantidade 1"]),
-    setor2: encontrarIndiceCabecalho(header, ["setores2", "setor2", "setor 2", "numero2", "numero 2", "estado2", "estado 2"]),
-    qt2: encontrarIndiceCabecalho(header, ["qt2", "qt 2", "quantidade2", "quantidade 2"]),
-    setor3: encontrarIndiceCabecalho(header, ["setores3", "setor3", "setor 3", "numero3", "numero 3", "estado3", "estado 3"]),
-    qt3: encontrarIndiceCabecalho(header, ["qt3", "qt 3", "quantidade3", "quantidade 3"])
-  };
-
-  if (idx.pesquisador < 0) {
-    throw new Error("A coluna PESQ. não foi encontrada no arquivo de cota.");
-  }
-
-  const setoresColetados = [];
-
-  linhas.forEach((linha) => {
-    [idx.setor1, idx.setor2, idx.setor3].forEach((indice) => {
-      const valor = String(pegarValorLinha(linha, indice) || "").trim();
-      if (valor) setoresColetados.push(valor);
-    });
-  });
-
-  const tipoManual = (selectTipoCota?.value || "auto").toLowerCase();
-  const tipoDetectado = tipoManual !== "auto" ? tipoManual : detectarTipoDaCota(setoresColetados);
-
-  const cotas = [];
-
-  linhas.forEach((linha) => {
-    const pesquisador = String(pegarValorLinha(linha, idx.pesquisador) || "").trim();
-    const dia = String(pegarValorLinha(linha, idx.dia) || "").trim();
-    const regiao = String(pegarValorLinha(linha, idx.regiao) || "").trim();
-
-    if (!pesquisador) return;
-
-    const itens = [];
-
-    [
-      { valor: idx.setor1, qt: idx.qt1 },
-      { valor: idx.setor2, qt: idx.qt2 },
-      { valor: idx.setor3, qt: idx.qt3 }
-    ].forEach(({ valor, qt }) => {
-      const valorCota = String(pegarValorLinha(linha, valor) || "").trim();
-      const quantidade = converterNumero(pegarValorLinha(linha, qt));
-
-      if (valorCota && quantidade > 0) {
-        itens.push({
-          valor: limparValorCota(valorCota, tipoDetectado),
-          quantidade,
-          regiao
-        });
-      }
-    });
-
-    if (itens.length) {
-      cotas.push({
-        dia,
-        pesquisador,
-        tipoCota: tipoDetectado,
-        itens
-      });
-    }
-  });
-
-  return cotas;
-}
-
-function detectarTipoDaCota(valores) {
-  const validos = valores
-    .map((v) => String(v ?? "").trim())
-    .filter(Boolean);
-
-  if (!validos.length) return "desconhecido";
-
-  const totalNumericos = validos.filter((v) => /^\d+$/.test(v)).length;
-  const proporcaoNumericos = totalNumericos / validos.length;
-
-  if (proporcaoNumericos >= 0.7) return "numero";
-
-  const ufs = new Set([
-    "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA",
-    "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN",
-    "RS", "RO", "RR", "SC", "SP", "SE", "TO"
-  ]);
-
-  const totalUFs = validos.filter((v) => ufs.has(String(v).trim().toUpperCase())).length;
-  const proporcaoUFs = totalUFs / validos.length;
-
-  if (proporcaoUFs >= 0.7) return "estado";
-
-  return "desconhecido";
-}
-
-function limparValorCota(valor, tipoCota) {
-  const texto = String(valor ?? "").trim();
-  if (tipoCota === "estado") return texto.toUpperCase();
-  return texto;
-}
-
-function obterColunaBusca(tipoCota) {
-  if (tipoCota === "estado") return "estado";
-  return "setor_dentro_cidade";
-}
-
-async function buscarRegistrosParaCota(cotas) {
-  const resultadoFinal = [];
-  const idsUsados = new Set();
-
-  for (const cota of cotas) {
-    for (const item of cota.itens) {
-      const registros = await buscarNoBancoPorCota({
-        valor: item.valor,
-        quantidade: item.quantidade,
-        pesquisador: cota.pesquisador,
-        dia: cota.dia,
-        tipoCota: cota.tipoCota,
-        regiao: item.regiao,
-        idsIgnorados: idsUsados,
-        estadoSelecionado: selectEstado?.value || "",
-        cidadeSelecionada: selectCidade?.value || ""
-      });
-
-      for (const reg of registros) {
-        const chave = String(reg.id ?? reg.idp ?? "");
-        if (chave && idsUsados.has(chave)) continue;
-        if (chave) idsUsados.add(chave);
-        resultadoFinal.push(reg);
-      }
-    }
-  }
-
-  return resultadoFinal;
-}
-
-async function buscarNoBancoPorCota({
-  valor,
-  quantidade,
-  pesquisador,
-  dia,
-  tipoCota,
-  regiao,
-  idsIgnorados = new Set(),
-  estadoSelecionado = "",
-  cidadeSelecionada = ""
-}) {
-  const quantidadeDesejada = Number(quantidade) || 0;
-  if (quantidadeDesejada <= 0) return [];
-
-  const colunaBusca = obterColunaBusca(tipoCota);
-  const limiteBusca = Math.max(quantidadeDesejada * 3, quantidadeDesejada + 50);
-
-  let query = supabase
-    .from("base_mestra")
-    .select(`
-      id,
-      idp,
-      estado,
-      cidade,
-      cod_estado,
-      cod_municipio,
-      cod_meso,
-      cod_micro,
-      regiao_cidade,
-      setor_dentro_cidade,
-      sexo,
-      idade,
-      grau_instrucao,
-      ocupacao,
-      renda_familiar,
-      data_pesquisa,
-      categoria,
-      nome,
-      endereco_completo,
-      endereco,
-      numero,
-      bairro,
-      cep,
-      email,
-      tf1,
-      tf2,
-      tf3,
-      tf4,
-      numero_pesq,
-      dia_pesq,
-      qt_tf1,
-      qt_tf2,
-      qt_tf3,
-      qt_tf4
-    `)
-    .eq(colunaBusca, valor)
-    .limit(limiteBusca);
-
-  if (regiao) {
-    query = query.eq("regiao_cidade", regiao);
-  }
-
-  if (estadoSelecionado) {
-    query = query.eq("estado", estadoSelecionado);
-  }
-
-  if (cidadeSelecionada) {
-    query = query.eq("cidade", cidadeSelecionada);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.error("Erro ao buscar no banco:", error);
-    return [];
-  }
-
-  const registrosFiltrados = [];
-  const idsLocais = new Set();
-
-  for (const reg of data || []) {
-    const idAtual = reg?.id != null ? String(reg.id) : "";
-
-    if (idAtual && (idsIgnorados.has(idAtual) || idsLocais.has(idAtual))) {
-      continue;
-    }
-
-    registrosFiltrados.push({
-      ...reg,
-      data_pesquisa: reg.data_pesquisa ?? dia,
-      numero_pesq: pesquisador,
-      dia_pesq: dia
-    });
-
-    if (idAtual) idsLocais.add(idAtual);
-
-    if (registrosFiltrados.length >= quantidadeDesejada) break;
-  }
-
-  return registrosFiltrados;
-}
-
-function mapearRegistroParaLinhaFinal(registro) {
-  return [
-    registro.idp ?? "",
-    registro.estado ?? "",
-    registro.cidade ?? "",
-    registro.cod_estado ?? "",
-    registro.cod_municipio ?? "",
-    registro.cod_meso ?? "",
-    registro.cod_micro ?? "",
-    registro.regiao_cidade ?? "",
-    registro.setor_dentro_cidade ?? "",
-    registro.sexo ?? "",
-    registro.idade ?? "",
-    registro.grau_instrucao ?? "",
-    registro.ocupacao ?? "",
-    registro.renda_familiar ?? "",
-    registro.data_pesquisa ?? "",
-    registro.categoria ?? "",
-    registro.nome ?? "",
-    registro.endereco_completo ?? "",
-    registro.endereco ?? "",
-    registro.numero ?? "",
-    registro.bairro ?? "",
-    registro.cep ?? "",
-    registro.email ?? "",
-    registro.tf1 ?? "",
-    registro.tf2 ?? "",
-    registro.tf3 ?? "",
-    registro.tf4 ?? "",
-    registro.numero_pesq ?? "",
-    registro.dia_pesq ?? "",
-    registro.qt_tf1 ?? "",
-    registro.qt_tf2 ?? "",
-    registro.qt_tf3 ?? "",
-    registro.qt_tf4 ?? ""
-  ];
-}
-
-function renderizarArquivoUnico() {
-  if (!listaArquivos || !emptyFiles || !arquivoGeradoUnico) return;
-
-  emptyFiles.classList.add("hidden");
-  listaArquivos.classList.remove("hidden");
-
-  listaArquivos.innerHTML = `
-    <div class="file-row">
-      <div class="file-info">
-        <div class="file-name">${escapeHtml(arquivoGeradoUnico.nomeArquivo)}</div>
-        <div class="file-meta">
-          Origem: ${escapeHtml(arquivoGeradoUnico.origem)} •
-          Linhas: ${arquivoGeradoUnico.rows.length} •
-          Colunas: ${arquivoGeradoUnico.headers.length} •
-          Criado em: ${escapeHtml(arquivoGeradoUnico.criadoEm)}
+function createManualDayCard(data = {}) {
+    manualDayCounter += 1;
+    const card = document.createElement("div");
+    card.className = "day-card";
+    card.dataset.dayId = String(manualDayCounter);
+
+    card.innerHTML = `
+        <div class="day-card-header">
+            <div class="day-card-title">Dia de pesquisa ${manualDayCounter}</div>
+            <button type="button" class="danger-btn remove-day-btn">Remover</button>
         </div>
-      </div>
 
-      <div class="file-actions">
-        <button class="btn btn-secondary" id="btnVerArquivoUnico" type="button">VER</button>
-        <button class="btn btn-success" id="btnDownloadArquivoUnico" type="button">DOWNLOAD EXCEL</button>
-        <button class="btn btn-warning" id="btnEnviarDashboard" type="button">Enviar para a Dashboard</button>
-      </div>
-    </div>
-  `;
+        <div class="day-grid">
+            <div class="field">
+                <label>Quantidade de pesquisadores</label>
+                <input
+                    type="number"
+                    class="manual-p-count"
+                    min="1"
+                    step="1"
+                    placeholder="Ex.: 36"
+                    value="${data.pCount ?? ""}"
+                />
+            </div>
 
-  document.getElementById("btnVerArquivoUnico")?.addEventListener("click", () => {
-    abrirModalPreview(arquivoGeradoUnico);
-  });
+            <div class="field">
+                <label>Data do dia de pesquisa</label>
+                <input
+                    type="text"
+                    class="manual-date"
+                    placeholder="Ex.: 12/04/2026"
+                    value="${data.date ?? ""}"
+                />
+            </div>
+        </div>
 
-  document.getElementById("btnDownloadArquivoUnico")?.addEventListener("click", () => {
-    baixarArquivoUnico(arquivoGeradoUnico);
-  });
+        <div class="day-help">
+            No modo sem cota, cada P recebe telefones na ordem: PESQUISA, VIVO, CLARO, OI, TIM, BRASIL.
+        </div>
+    `;
 
-  document.getElementById("btnEnviarDashboard")?.addEventListener("click", () => {
-    alert("A ação de envio para a Dashboard ainda não foi implementada.");
-  });
+    card.querySelector(".remove-day-btn")?.addEventListener("click", () => {
+        card.remove();
+        refreshManualDayTitles();
+        if (!manualDaysList.children.length) {
+            createManualDayCard();
+        }
+    });
+
+    manualDaysList.appendChild(card);
+    refreshManualDayTitles();
 }
 
-function abrirModalPreview(arquivo) {
-  if (!modalPreview || !arquivoPreviewHead || !arquivoPreviewBody) return;
-
-  arquivoPreviewHead.innerHTML = `
-    <tr>
-      ${arquivo.headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}
-    </tr>
-  `;
-
-  arquivoPreviewBody.innerHTML = "";
-
-  const linhasPreview = arquivo.rows.slice(0, 20);
-
-  linhasPreview.forEach((linha) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = linha
-      .map((valor) => `<td>${escapeHtml(String(valor ?? ""))}</td>`)
-      .join("");
-    arquivoPreviewBody.appendChild(tr);
-  });
-
-  modalPreview.classList.remove("hidden");
-  modalPreview.setAttribute("aria-hidden", "false");
+function refreshManualDayTitles() {
+    [...manualDaysList.children].forEach((card, index) => {
+        const title = card.querySelector(".day-card-title");
+        if (title) title.textContent = `Dia de pesquisa ${index + 1}`;
+    });
 }
 
-function fecharModalPreview() {
-  modalPreview?.classList.add("hidden");
-  modalPreview?.setAttribute("aria-hidden", "true");
+/* =========================
+   UTILITÁRIOS
+========================= */
+
+function showLog() {
+    logBox.classList.remove("hidden");
 }
 
-function baixarArquivoUnico(arquivo) {
-  const dados = [arquivo.headers, ...arquivo.rows];
-  const worksheet = XLSX.utils.aoa_to_sheet(dados);
-  const workbook = XLSX.utils.book_new();
+function addLog(message, type = "ok") {
+    showLog();
 
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Telefones");
-  XLSX.writeFile(workbook, arquivo.nomeArquivo);
-}
-
-function montarNomeArquivoUnico(nomeOriginal, data) {
-  const base = String(nomeOriginal || "arquivo")
-    .replace(/\.[^.]+$/, "")
-    .replace(/[^\w\-]+/g, "_");
-
-  const stamp = [
-    data.getFullYear(),
-    String(data.getMonth() + 1).padStart(2, "0"),
-    String(data.getDate()).padStart(2, "0"),
-    "_",
-    String(data.getHours()).padStart(2, "0"),
-    String(data.getMinutes()).padStart(2, "0"),
-    String(data.getSeconds()).padStart(2, "0")
-  ].join("");
-
-  return `${base}_gerado_${stamp}.xlsx`;
-}
-
-function setBotaoCarregando(botao, carregando, textoPadrao = "Processar") {
-  if (!botao) return;
-
-  if (carregando) {
-    botao.dataset.labelOriginal = botao.textContent;
-    botao.textContent = textoPadrao;
-    botao.disabled = true;
-    return;
-  }
-
-  botao.textContent = botao.dataset.labelOriginal || textoPadrao;
-  botao.disabled = false;
-
-  if (!arquivoSelecionado && botao === btnProcessarArquivo) {
-    botao.disabled = true;
-  }
-}
-
-function ehArquivoPermitido(file) {
-  const nome = String(file?.name || "").toLowerCase();
-  return [".xlsx", ".xls", ".csv"].some((ext) => nome.endsWith(ext));
-}
-
-function obterBadgeArquivo(file) {
-  return obterExtensaoArquivo(file?.name || "").toUpperCase() || "ARQ";
-}
-
-function obterExtensaoArquivo(nome) {
-  const partes = String(nome || "").split(".");
-  return partes.length > 1 ? partes.pop() : "arquivo";
-}
-
-function formatarTamanhoArquivo(bytes) {
-  const valor = Number(bytes || 0);
-
-  if (valor < 1024) return `${valor} B`;
-  if (valor < 1024 * 1024) return `${(valor / 1024).toFixed(1)} KB`;
-  if (valor < 1024 * 1024 * 1024) return `${(valor / (1024 * 1024)).toFixed(1)} MB`;
-
-  return `${(valor / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
-function formatarDataHora(data) {
-  const dd = String(data.getDate()).padStart(2, "0");
-  const mm = String(data.getMonth() + 1).padStart(2, "0");
-  const yyyy = data.getFullYear();
-  const hh = String(data.getHours()).padStart(2, "0");
-  const mi = String(data.getMinutes()).padStart(2, "0");
-
-  return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
-}
-
-function normalizarCabecalho(valor) {
-  return String(valor || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
-}
-
-function encontrarIndiceCabecalho(headers, alternativas) {
-  return headers.findIndex((header) =>
-    alternativas.some((alt) => header === normalizarCabecalho(alt))
-  );
-}
-
-function pegarValorLinha(linha, indice) {
-  if (indice < 0) return "";
-  return linha?.[indice] ?? "";
-}
-
-function converterNumero(valor) {
-  const texto = String(valor ?? "").trim().replace(",", ".");
-  const numero = Number(texto);
-  return Number.isFinite(numero) ? numero : 0;
-}
-
-function separarLinhaCsv(linha) {
-  const resultado = [];
-  let atual = "";
-  let dentroDeAspas = false;
-
-  for (let i = 0; i < linha.length; i++) {
-    const char = linha[i];
-    const prox = linha[i + 1];
-
-    if (char === '"' && dentroDeAspas && prox === '"') {
-      atual += '"';
-      i++;
-      continue;
+    let ul = logBox.querySelector("ul");
+    if (!ul) {
+        ul = document.createElement("ul");
+        logBox.innerHTML = "";
+        logBox.appendChild(ul);
     }
 
-    if (char === '"') {
-      dentroDeAspas = !dentroDeAspas;
-      continue;
-    }
+    const li = document.createElement("li");
+    li.className = type;
+    li.textContent = message;
+    ul.appendChild(li);
 
-    if (char === ";" && !dentroDeAspas) {
-      resultado.push(atual);
-      atual = "";
-      continue;
-    }
-
-    if (char === "," && !dentroDeAspas) {
-      resultado.push(atual);
-      atual = "";
-      continue;
-    }
-
-    atual += char;
-  }
-
-  resultado.push(atual);
-  return resultado;
+    logBox.scrollTop = logBox.scrollHeight;
 }
 
-function lerTextoArquivoCsv(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      const buffer = reader.result;
-      const uint8 = new Uint8Array(buffer);
-
-      let texto = new TextDecoder("utf-8", { fatal: false }).decode(uint8);
-
-      const temCaractereSubstituicao = texto.includes("�");
-      if (temCaractereSubstituicao) {
-        texto = new TextDecoder("windows-1252", { fatal: false }).decode(uint8);
-      }
-
-      resolve(texto.replace(/^﻿/, ""));
-    };
-
-    reader.onerror = () => {
-      reject(reader.error || new Error("Não foi possível ler o arquivo CSV."));
-    };
-
-    reader.readAsArrayBuffer(file);
-  });
+function clearLog() {
+    logBox.innerHTML = "";
+    logBox.classList.add("hidden");
 }
 
-function escapeHtml(valor) {
-  return String(valor ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+function normalizeText(value) {
+    return String(value ?? "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toUpperCase();
+}
+
+function isRowEmpty(row = []) {
+    return row.every((cell) => String(cell ?? "").trim() === "");
+}
+
+function excelDateToJSDate(serial) {
+    if (typeof serial !== "number") return null;
+    const utcDays = Math.floor(serial - 25569);
+    const utcValue = utcDays * 86400;
+    return new Date(utcValue * 1000);
+}
+
+function formatDateToDDMMYYYY(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+    const dd = String(date.getDate()).padStart(2, "0");
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const yyyy = date.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+}
+
+function normalizeDateString(value) {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "";
+
+    const direct = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (direct) return raw;
+
+    const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+
+    return raw;
+}
+
+function safeFileName(name) {
+    return String(name || "arquivo_final")
+        .replace(/\.[^.]+$/, "")
+        .replace(/[\\/:*?"<>|]+/g, "_")
+        .replace(/\s+/g, "_");
+}
+
+function triggerDownload(blob, fileName) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+
+function getArrayBuffer(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+function decodeCsvArrayBuffer(arrayBuffer) {
+    try {
+        return new TextDecoder("utf-8", { fatal: true }).decode(arrayBuffer);
+    } catch {
+        return new TextDecoder("latin1").decode(arrayBuffer);
+    }
+}
+
+function parseCSV(text) {
+    const parsed = Papa.parse(text, {
+        header: true,
+        skipEmptyLines: true,
+        delimiter: "",
+        dynamicTyping: false,
+        transformHeader: (header) => String(header ?? "").trim(),
+    });
+
+    return parsed.data || [];
+}
+
+function findMainSheetName(workbook) {
+    const names = workbook.SheetNames || [];
+    if (!names.length) return null;
+
+    const preferred = names.find((name) =>
+        /COM.*PRIV.*FAC.*PESQ/i.test(normalizeText(name))
+    );
+
+    if (preferred) return preferred;
+
+    const firstNotContagem = names.find(
+        (name) => normalizeText(name) !== "CONTAGEM"
+    );
+
+    return firstNotContagem || names[0];
+}
+
+function getSheetRows(workbook, sheetName) {
+    const sheet = workbook.Sheets[sheetName];
+    return XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        defval: "",
+        raw: true,
+        blankrows: false,
+    });
+}
+
+function findHeaderIndex(headers, candidates) {
+    const normalizedHeaders = headers.map(normalizeText);
+
+    for (const candidate of candidates) {
+        const idx = normalizedHeaders.findIndex((h) => h === normalizeText(candidate));
+        if (idx !== -1) return idx;
+    }
+
+    return -1;
+}
+
+function getDisplayDate(rawValue) {
+    if (typeof rawValue === "number") {
+        return formatDateToDDMMYYYY(excelDateToJSDate(rawValue));
+    }
+    return normalizeDateString(rawValue);
+}
+
+function clearColumnsInRows(rows, dataStartIndex, targetIndexes = []) {
+    for (let i = dataStartIndex; i < rows.length; i++) {
+        if (!rows[i]) rows[i] = [];
+        if (isRowEmpty(rows[i])) continue;
+
+        for (const colIndex of targetIndexes) {
+            if (colIndex >= 0) rows[i][colIndex] = "";
+        }
+    }
+}
+
+function ensureRequiredColumn(index, name) {
+    return index !== -1 ? true : (() => { throw new Error(`Não encontrei a coluna "${name}".`); })();
+}
+
+function getMaxNumbersPerPesq() {
+    const value = Number(maxNumbersPerPesqInput?.value);
+    if (!Number.isInteger(value) || value <= 0) {
+        throw new Error("Informe a quantidade máxima de telefones por P.");
+    }
+    return value;
+}
+
+function getManualDayConfigs() {
+    const cards = [...manualDaysList.querySelectorAll(".day-card")];
+
+    return cards
+        .map((card) => {
+            const pCount = Number(card.querySelector(".manual-p-count")?.value);
+            const date = normalizeDateString(card.querySelector(".manual-date")?.value);
+
+            return { pCount, date };
+        })
+        .filter((item) => item.pCount > 0 && item.date);
+}
+
+function createPesquisadoresFromCount(count) {
+    const qtd = Number(count);
+    if (!Number.isInteger(qtd) || qtd <= 0) return [];
+
+    return Array.from({ length: qtd }, (_, index) => {
+        const n = String(index + 1).padStart(2, "0");
+        return `P${n}`;
+    });
+}
+
+function normalizeCategory(value) {
+    return normalizeText(value);
+}
+
+function getCategoryPriorityIndex(category) {
+    const idx = CATEGORY_PRIORITY.indexOf(normalizeCategory(category));
+    return idx === -1 ? 999 : idx;
+}
+
+function sortRowsByCategory(rows) {
+    return [...rows].sort((a, b) => {
+        const diff = getCategoryPriorityIndex(a.categoria) - getCategoryPriorityIndex(b.categoria);
+        if (diff !== 0) return diff;
+        return a.originalIndex - b.originalIndex;
+    });
+}
+
+function sortGlobalRows(rows) {
+    return sortRowsByCategory(rows);
+}
+
+function buildFinalRows(rows, dataStartIndex, columnIndexes, diaPesqColIndex) {
+    const finalRows = [];
+
+    for (let i = dataStartIndex; i < rows.length; i++) {
+        const row = rows[i] || [];
+        if (isRowEmpty(row)) continue;
+
+        const pesqValue = String(row[columnIndexes.pesq] ?? "").trim();
+        if (!pesqValue) continue;
+
+        const diaPesqValue =
+            diaPesqColIndex >= 0 ? getDisplayDate(row[diaPesqColIndex]) : "";
+
+        finalRows.push([
+            row[columnIndexes.idp] ?? "",
+            row[columnIndexes.cidade] ?? "",
+            row[columnIndexes.estado] ?? "",
+            row[columnIndexes.regiao] ?? "",
+            row[columnIndexes.setor] ?? "",
+            row[columnIndexes.tf1] ?? "",
+            row[columnIndexes.tf2] ?? "",
+            pesqValue,
+            diaPesqValue ?? "",
+        ]);
+    }
+
+    return finalRows;
+}
+
+function autoFitSheetColumns(sheetData, worksheet) {
+    const widths = [];
+
+    sheetData.forEach((row) => {
+        row.forEach((cell, index) => {
+            const len = String(cell ?? "").length;
+            widths[index] = Math.max(widths[index] || 10, Math.min(len + 2, 35));
+        });
+    });
+
+    worksheet["!cols"] = widths.map((wch) => ({ wch }));
+}
+
+function handleDownload() {
+    if (!generatedBlob || !generatedFileName) {
+        addLog("Nenhum arquivo final foi gerado ainda.", "warn");
+        return;
+    }
+    triggerDownload(generatedBlob, generatedFileName);
+}
+
+function assignRowsToPesquisador(rowsToAssign, pesquisador, date, rows, pesqCol, dataPesquisaCol) {
+    rowsToAssign.forEach((item) => {
+        const matrixIndex = item.rowNumberExcel - 1;
+        if (!rows[matrixIndex]) rows[matrixIndex] = [];
+        rows[matrixIndex][pesqCol] = pesquisador;
+        rows[matrixIndex][dataPesquisaCol] = date;
+    });
+}
+
+function computeMaxPerPByAvailable(totalRows, totalPesquisadores) {
+    if (!totalPesquisadores) return 0;
+    return Math.floor(totalRows / totalPesquisadores);
+}
+
+function isNumericLike(value) {
+    const raw = String(value ?? "").trim();
+    return /^-?\d+(?:[.,]\d+)?$/.test(raw);
+}
+
+function normalizeSetorValue(value) {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "";
+    return raw.replace(",", ".");
+}
+
+function normalizeSetorKey(value) {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "";
+    return isNumericLike(raw) ? normalizeSetorValue(raw) : normalizeText(raw);
+}
+
+function detectSetorMode(setorValue) {
+    return isNumericLike(setorValue) ? "setor" : "estado";
+}
+
+function buildCotaDemandListForDate(cotaRowsForDate) {
+    const demands = [];
+    const headers = Object.keys(cotaRowsForDate[0] || {});
+    const setorCols = headers.filter((h) => /^SETORES\d+$/i.test(String(h).trim()));
+
+    cotaRowsForDate.forEach((row) => {
+        const pesquisador = String(row["PESQ."] ?? row["PESQ"] ?? "").trim();
+        if (!pesquisador) return;
+
+        setorCols.forEach((_, index) => {
+            const setorCol = `SETORES${index + 1}`;
+            const qtCol = `QT${index + 1}`;
+
+            const setorRaw = String(row[setorCol] ?? "").trim();
+            const questionarios = Number(String(row[qtCol] ?? "").replace(",", "."));
+
+            if (!setorRaw || !Number.isFinite(questionarios) || questionarios <= 0) return;
+
+            demands.push({
+                pesquisador,
+                setorRaw,
+                setorMode: detectSetorMode(setorRaw),
+                setorKey: normalizeSetorKey(setorRaw),
+                questionarios
+            });
+        });
+    });
+
+    return demands;
+}
+
+function splitCotaRowsByDate(cotaRows) {
+    const groups = new Map();
+
+    cotaRows.forEach((row) => {
+        const date = normalizeDateString(row["DIA"]);
+        if (!date) return;
+
+        if (!groups.has(date)) groups.set(date, []);
+        groups.get(date).push(row);
+    });
+
+    return groups;
+}
+
+function buildPoolsByMode(usefulRows) {
+    const estadoPools = new Map();
+    const setorPools = new Map();
+
+    usefulRows.forEach((row) => {
+        const estadoKey = normalizeText(row.estado);
+        const setorKey = normalizeSetorValue(row.setor);
+
+        if (!estadoPools.has(estadoKey)) estadoPools.set(estadoKey, []);
+        estadoPools.get(estadoKey).push(row);
+
+        if (!setorPools.has(setorKey)) setorPools.set(setorKey, []);
+        setorPools.get(setorKey).push(row);
+    });
+
+    for (const [key, value] of estadoPools.entries()) {
+        estadoPools.set(key, sortRowsByCategory(value));
+    }
+
+    for (const [key, value] of setorPools.entries()) {
+        setorPools.set(key, sortRowsByCategory(value));
+    }
+
+    return { estadoPools, setorPools };
+}
+
+/* =========================
+   NOVA LÓGICA DE RATEIO POR DATA NO MODO COTA
+========================= */
+
+function groupDemandsByBucketAcrossDates(cotaRowsByDate) {
+    const bucketMap = new Map();
+
+    for (const [date, cotaRowsForDate] of cotaRowsByDate.entries()) {
+        const demands = buildCotaDemandListForDate(cotaRowsForDate);
+
+        demands.forEach((demand) => {
+            const bucketKey = `${demand.setorMode}::${demand.setorKey}`;
+
+            if (!bucketMap.has(bucketKey)) {
+                bucketMap.set(bucketKey, {
+                    mode: demand.setorMode,
+                    key: demand.setorKey,
+                    dates: new Map()
+                });
+            }
+
+            const bucket = bucketMap.get(bucketKey);
+
+            if (!bucket.dates.has(date)) {
+                bucket.dates.set(date, []);
+            }
+
+            bucket.dates.get(date).push(demand);
+        });
+    }
+
+    return bucketMap;
+}
+
+function splitIntegerEqually(total, parts) {
+    if (parts <= 0) return [];
+    const base = Math.floor(total / parts);
+    const remainder = total % parts;
+
+    return Array.from({ length: parts }, (_, index) => base + (index < remainder ? 1 : 0));
+}
+
+function buildSharedPoolsForCota(usefulRows, cotaRowsByDate) {
+    const bucketGroups = groupDemandsByBucketAcrossDates(cotaRowsByDate);
+    const { estadoPools, setorPools } = buildPoolsByMode(usefulRows);
+
+    const sharedPools = new Map();
+
+    for (const [bucketKey, bucketInfo] of bucketGroups.entries()) {
+        const sourcePool =
+            bucketInfo.mode === "estado"
+                ? (estadoPools.get(bucketInfo.key) || [])
+                : (setorPools.get(bucketInfo.key) || []);
+
+        const dates = [...bucketInfo.dates.keys()].sort((a, b) => {
+            const [da, ma, ya] = a.split("/").map(Number);
+            const [db, mb, yb] = b.split("/").map(Number);
+            return new Date(ya, ma - 1, da) - new Date(yb, mb - 1, db);
+        });
+
+        const equalParts = splitIntegerEqually(sourcePool.length, dates.length);
+
+        let cursor = 0;
+        const perDatePools = new Map();
+
+        dates.forEach((date, index) => {
+            const qty = equalParts[index];
+            const slice = sourcePool.slice(cursor, cursor + qty);
+            cursor += qty;
+            perDatePools.set(date, slice);
+        });
+
+        sharedPools.set(bucketKey, {
+            mode: bucketInfo.mode,
+            key: bucketInfo.key,
+            perDatePools
+        });
+    }
+
+    return sharedPools;
+}
+
+/* =========================
+   PROCESSAMENTO PRINCIPAL
+========================= */
+
+async function handleProcess() {
+    try {
+        clearLog();
+        resultSection.classList.add("hidden");
+        previewHead.innerHTML = "";
+        previewBody.innerHTML = "";
+        downloadBtn.classList.add("hidden");
+        generatedBlob = null;
+        generatedFileName = "";
+
+        const baseFile = baseFileInput?.files?.[0];
+        const hasCota = hasCotaSelect?.value === "sim";
+
+        if (!baseFile) {
+            addLog("Selecione o arquivo base (.xlsx).", "error");
+            return;
+        }
+
+        if (hasCota && !cotaFileInput?.files?.[0]) {
+            addLog("Selecione o arquivo COTA (.csv).", "error");
+            return;
+        }
+
+        if (!hasCota) {
+            const manualConfigs = getManualDayConfigs();
+            if (!manualConfigs.length) {
+                addLog("Informe ao menos um dia de pesquisa com quantidade de pesquisadores e data.", "error");
+                return;
+            }
+        }
+
+        processBtn.disabled = true;
+        processBtn.textContent = "Processando...";
+
+        addLog("Lendo arquivo Excel...", "ok");
+        const baseBuffer = await getArrayBuffer(baseFile);
+        const workbook = XLSX.read(baseBuffer, { type: "array", cellDates: false });
+
+        const mainSheetName = findMainSheetName(workbook);
+        if (!mainSheetName) {
+            addLog("Não foi possível localizar a aba principal.", "error");
+            return;
+        }
+
+        const rows = getSheetRows(workbook, mainSheetName);
+        if (!rows.length || rows.length < 3) {
+            addLog("A aba principal está vazia ou incompleta.", "error");
+            return;
+        }
+
+        addLog(`Aba principal encontrada: ${mainSheetName}`, "ok");
+
+        const headerRowIndex = 1;
+        const headerRow = rows[headerRowIndex] || [];
+        const dataStartIndex = headerRowIndex + 1;
+        const dataRows = rows.slice(dataStartIndex);
+
+        const idpCol = findHeaderIndex(headerRow, ["IDP"]);
+        const cidadeCol = findHeaderIndex(headerRow, ["CIDADE"]);
+        const estadoCol = findHeaderIndex(headerRow, ["ESTADO"]);
+        const regiaoCol = findHeaderIndex(headerRow, ["REGIÃO CIDADE", "REGIAO CIDADE", "REGIÃO", "REGIAO"]);
+        const setorCol = findHeaderIndex(headerRow, [
+            "SETOR DENTRO DA CIDADE",
+            "SETOR",
+            "SETOR CIDADE",
+            "SETOR_CIDADE"
+        ]);
+        const categoriaCol = findHeaderIndex(headerRow, ["CATEGORIA"]);
+        const tf1Col = findHeaderIndex(headerRow, ["TF1"]);
+        const tf2Col = findHeaderIndex(headerRow, ["TF2"]);
+        const pesqCol = findHeaderIndex(headerRow, ["Nº PESQ.", "Nº PESQ", "NO PESQ.", "NO PESQ", "NUMERO PESQ", "N° PESQ", "N°PESQ"]);
+        const dataPesquisaCol = findHeaderIndex(headerRow, [
+            "DIA PESQ",
+            "DIA DA PESQ",
+            "DIA DA PESQUISA",
+            "DIA PESQUISA",
+            "DATA DA PESQUISA",
+            "DATA PESQUISA"
+        ]);
+
+        ensureRequiredColumn(idpCol, "IDP");
+        ensureRequiredColumn(cidadeCol, "CIDADE");
+        ensureRequiredColumn(estadoCol, "ESTADO");
+        ensureRequiredColumn(regiaoCol, "REGIÃO");
+        ensureRequiredColumn(setorCol, "SETOR DENTRO DA CIDADE");
+        ensureRequiredColumn(categoriaCol, "CATEGORIA");
+        ensureRequiredColumn(tf1Col, "TF1");
+        ensureRequiredColumn(tf2Col, "TF2");
+        ensureRequiredColumn(pesqCol, "N° PESQ");
+        ensureRequiredColumn(dataPesquisaCol, "DIA PESQ");
+
+        const usefulRows = dataRows
+            .map((row, dataIndex) => ({
+                row,
+                dataIndex,
+                rowNumberExcel: dataStartIndex + dataIndex + 1,
+                originalIndex: dataIndex,
+                cidade: String(row[cidadeCol] ?? "").trim(),
+                estado: String(row[estadoCol] ?? "").trim(),
+                regiao: String(row[regiaoCol] ?? "").trim(),
+                setor: String(row[setorCol] ?? "").trim(),
+                categoria: String(row[categoriaCol] ?? "").trim(),
+            }))
+            .filter(({ row }) => !isRowEmpty(row));
+
+        if (!usefulRows.length) {
+            addLog("Não há linhas úteis na aba principal.", "error");
+            return;
+        }
+
+        addLog(`Total de linhas úteis encontradas: ${usefulRows.length}`, "ok");
+        addLog("Limpando colunas antigas de N° PESQ e DIA PESQ...", "ok");
+        clearColumnsInRows(rows, dataStartIndex, [pesqCol, dataPesquisaCol]);
+
+        if (hasCota) {
+            await processWithCota({
+                rows,
+                usefulRows,
+                dataPesquisaCol,
+                pesqCol
+            });
+        } else {
+            processWithoutCota({
+                rows,
+                usefulRows,
+                dataPesquisaCol,
+                pesqCol
+            });
+        }
+
+        const finalHeaders = ["IDP", "CIDADE", "ESTADO", "REGIÃO", "SETOR", "TF1", "TF2", "N° PESQ", "DIA PESQ"];
+        const finalDataRows = buildFinalRows(
+            rows,
+            dataStartIndex,
+            {
+                idp: idpCol,
+                cidade: cidadeCol,
+                estado: estadoCol,
+                regiao: regiaoCol,
+                setor: setorCol,
+                tf1: tf1Col,
+                tf2: tf2Col,
+                pesq: pesqCol,
+            },
+            dataPesquisaCol
+        );
+
+        if (!finalDataRows.length) {
+            addLog("Nenhuma linha final foi gerada.", "warn");
+            return;
+        }
+
+        renderPreview(finalHeaders, finalDataRows);
+        addLog(`Linhas exportadas no arquivo final: ${finalDataRows.length}`, "ok");
+
+        const finalWorkbook = XLSX.utils.book_new();
+        const finalSheetData = [finalHeaders, ...finalDataRows];
+        const finalSheet = XLSX.utils.aoa_to_sheet(finalSheetData);
+
+        autoFitSheetColumns(finalSheetData, finalSheet);
+
+        XLSX.utils.book_append_sheet(finalWorkbook, finalSheet, "RESULTADO");
+
+        const wbout = XLSX.write(finalWorkbook, {
+            bookType: "xlsx",
+            type: "array",
+        });
+
+        generatedFileName = `${safeFileName(baseFile.name)}_PREENCHIDO.xlsx`;
+        generatedBlob = new Blob([wbout], {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        });
+
+        downloadBtn.classList.remove("hidden");
+        addLog(`Arquivo final pronto para download: ${generatedFileName}`, "ok");
+    } catch (error) {
+        console.error(error);
+        addLog(`Erro ao processar: ${error.message || error}`, "error");
+    } finally {
+        processBtn.disabled = false;
+        processBtn.textContent = "Processar arquivo";
+    }
+}
+
+function processWithoutCota({
+    rows,
+    usefulRows,
+    dataPesquisaCol,
+    pesqCol
+}) {
+    addLog("Modo selecionado: SEM COTA", "ok");
+
+    const maxPerPesq = getMaxNumbersPerPesq();
+    const dayConfigs = getManualDayConfigs();
+
+    if (!dayConfigs.length) {
+        throw new Error("Informe ao menos um dia de pesquisa.");
+    }
+
+    dayConfigs.forEach((item, index) => {
+        if (!item.pCount || item.pCount <= 0) {
+            throw new Error(`Dia ${index + 1}: quantidade de pesquisadores inválida.`);
+        }
+        if (!item.date) {
+            throw new Error(`Dia ${index + 1}: data inválida.`);
+        }
+    });
+
+    const totalPesquisadores = dayConfigs.reduce((sum, item) => sum + item.pCount, 0);
+    const totalNeeded = totalPesquisadores * maxPerPesq;
+    const sortedPool = sortGlobalRows(usefulRows);
+
+    addLog(`Total de pesquisadores informados: ${totalPesquisadores}`, "ok");
+    addLog(`Telefones necessários: ${totalNeeded}`, "ok");
+
+    if (sortedPool.length < totalNeeded) {
+        const maxPerP = computeMaxPerPByAvailable(sortedPool.length, totalPesquisadores);
+        throw new Error(`O máximo de telefones por P são ${maxPerP} de acordo com a quantidade de linhas.`);
+    }
+
+    let cursor = 0;
+    let totalAtribuido = 0;
+
+    dayConfigs.forEach((dayConfig, dayIndex) => {
+        const pesquisadores = createPesquisadoresFromCount(dayConfig.pCount);
+
+        pesquisadores.forEach((pesquisador) => {
+            const rowsToAssign = sortedPool.slice(cursor, cursor + maxPerPesq);
+            cursor += maxPerPesq;
+
+            assignRowsToPesquisador(rowsToAssign, pesquisador, dayConfig.date, rows, pesqCol, dataPesquisaCol);
+            totalAtribuido += rowsToAssign.length;
+        });
+
+        addLog(
+            `Dia ${dayIndex + 1} (${dayConfig.date}): ${pesquisadores.length} pesquisadores preenchidos com ${maxPerPesq} telefones cada.`,
+            "ok"
+        );
+    });
+
+    addLog(`Total preenchido em N° PESQ: ${totalAtribuido}`, "ok");
+    addLog(`Ordem de uso da categoria: ${CATEGORY_PRIORITY.join(" → ")}`, "ok");
+}
+
+async function processWithCota({
+    rows,
+    usefulRows,
+    dataPesquisaCol,
+    pesqCol
+}) {
+    addLog("Modo selecionado: COM COTA", "ok");
+
+    const cotaFile = cotaFileInput?.files?.[0];
+    const cotaBuffer = await getArrayBuffer(cotaFile);
+    const cotaText = decodeCsvArrayBuffer(cotaBuffer);
+    const cotaRows = parseCSV(cotaText);
+
+    if (!cotaRows.length) {
+        throw new Error("O arquivo COTA está vazio ou inválido.");
+    }
+
+    const cotaRowsByDate = splitCotaRowsByDate(cotaRows);
+
+    if (!cotaRowsByDate.size) {
+        throw new Error('Não encontrei a coluna "DIA" preenchida corretamente no arquivo COTA.');
+    }
+
+    const sharedPools = buildSharedPoolsForCota(usefulRows, cotaRowsByDate);
+    let totalAtribuido = 0;
+
+    for (const [date, cotaRowsForDate] of cotaRowsByDate.entries()) {
+        addLog(`Processando data ${date}...`, "ok");
+
+        const demands = buildCotaDemandListForDate(cotaRowsForDate);
+
+        if (!demands.length) {
+            addLog(`Data ${date}: nenhuma demanda válida encontrada.`, "warn");
+            continue;
+        }
+
+        const totalsByBucket = new Map();
+
+        demands.forEach((demand) => {
+            const bucketKey = `${demand.setorMode}::${demand.setorKey}`;
+
+            if (!totalsByBucket.has(bucketKey)) {
+                totalsByBucket.set(bucketKey, {
+                    mode: demand.setorMode,
+                    key: demand.setorKey,
+                    totalQuestionarios: 0
+                });
+            }
+
+            totalsByBucket.get(bucketKey).totalQuestionarios += demand.questionarios;
+        });
+
+        const multiplierByBucket = new Map();
+
+        for (const [bucketKey, bucketInfo] of totalsByBucket.entries()) {
+            const shared = sharedPools.get(bucketKey);
+            const poolForDate = shared?.perDatePools?.get(date) || [];
+            const available = poolForDate.length;
+
+            const multiplier = bucketInfo.totalQuestionarios > 0
+                ? Math.min(60, Math.floor(available / bucketInfo.totalQuestionarios))
+                : 0;
+
+            multiplierByBucket.set(bucketKey, multiplier);
+
+            addLog(
+                `Data ${date} | ${bucketInfo.mode === "estado" ? "Estado" : "Setor"} ${bucketInfo.key}: ${available} telefones disponíveis para esta data, ${bucketInfo.totalQuestionarios} questionários, multiplicador final ${multiplier}.`,
+                multiplier > 0 ? "ok" : "warn"
+            );
+        }
+
+        let totalData = 0;
+
+        demands.forEach((demand) => {
+            const bucketKey = `${demand.setorMode}::${demand.setorKey}`;
+            const multiplier = multiplierByBucket.get(bucketKey) || 0;
+            if (multiplier <= 0) return;
+
+            const qtyTelefones = Math.floor(demand.questionarios * multiplier);
+            if (qtyTelefones <= 0) return;
+
+            const shared = sharedPools.get(bucketKey);
+            const poolForDate = shared?.perDatePools?.get(date) || [];
+
+            const rowsToAssign = poolForDate.splice(0, qtyTelefones);
+
+            assignRowsToPesquisador(rowsToAssign, demand.pesquisador, date, rows, pesqCol, dataPesquisaCol);
+            totalData += rowsToAssign.length;
+        });
+
+        totalAtribuido += totalData;
+        addLog(`Data ${date}: total preenchido ${totalData}.`, "ok");
+    }
+
+    addLog(`Total preenchido em N° PESQ: ${totalAtribuido}`, "ok");
+    addLog(`Ordem de uso da categoria por grupo: ${CATEGORY_PRIORITY.join(" → ")}`, "ok");
+}
+
+function renderPreview(headers, dataRows, limit = 60) {
+    previewHead.innerHTML = "";
+    previewBody.innerHTML = "";
+
+    const trHead = document.createElement("tr");
+    headers.forEach((header) => {
+        const th = document.createElement("th");
+        th.textContent = header ?? "";
+        trHead.appendChild(th);
+    });
+    previewHead.appendChild(trHead);
+
+    dataRows.slice(0, limit).forEach((row) => {
+        const tr = document.createElement("tr");
+        row.forEach((cell) => {
+            const td = document.createElement("td");
+            td.textContent = cell ?? "";
+            tr.appendChild(td);
+        });
+        previewBody.appendChild(tr);
+    });
+
+    resultSection.classList.remove("hidden");
 }

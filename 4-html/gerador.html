@@ -2,188 +2,96 @@
 <html lang="pt-BR">
 
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gerador de Telefones</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Distribuidor de Telefones</title>
+    <script defer src="/config.js"></script>
+    <link rel="stylesheet" href="/1-componentes/global.css" />
+    <link rel="stylesheet" href="/3-css/gerador.css" />
 
-  <link rel="icon" type="image/png" sizes="32x32" href="/0-imgs/IconIBESPE.jpg" />
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
-  <link rel="stylesheet" href="/1-componentes/global.css" />
-  <link rel="stylesheet" href="/3-css/gerador.css" />
-
-  <script defer src="/config.js"></script>
-  <script defer type="module" src="/2-header-footer/header-footer.js"></script>
-  <script defer src="/5-js/db.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-  <script defer type="module" src="/5-js/gerador.js"></script>
+    <script defer type="module" src="/2-header-footer/header-footer.js"></script>
+    <script defer src="/5-js/db.js"></script>
+    <script defer type="module" src="/5-js/gerador.js"></script>
 </head>
 
 <body>
-  <div id="header"></div>
+    <div id="header"></div>
 
-  <main class="page">
-    <section class="hero-top">
-      <h1 class="tituloPagina">Gerador de Telefones</h1>
-      <p class="subtituloPagina">
-        Envie a planilha e gere um único arquivo final mantendo o mesmo padrão do arquivo importado.
-      </p>
-    </section>
-
-    <section class="panel hero-panel">
-      <div class="panel-header">
-        <div>
-          <h2 class="panel-title">Importar arquivo principal</h2>
-          <p class="panel-subtitle">
-            Arraste ou selecione a planilha para iniciar o processamento.
-          </p>
-        </div>
-      </div>
-
-      <form id="formularioEnvio" class="upload-form">
-        <input class="entradaArquivo" type="file" id="inputArquivo" accept=".xlsx,.xls,.csv" hidden />
-
-        <section class="areaSoltar estado-esperando" id="areaDrop" aria-label="Enviar Dados do Excel" tabindex="0">
-          <div class="upload-state upload-state-empty" id="uploadStateEmpty">
-            <div class="areaSoltarIcone">📄</div>
-
-            <p class="areaSoltarTexto">
-              <strong>Arraste</strong> ou <strong>selecione</strong> o arquivo principal
-            </p>
-
-            <p class="areaSoltarSubtexto">
-              Formatos aceitos: .xlsx, .xls e .csv
-            </p>
-
-            <menu class="acoes" aria-label="Ações Dados Excel">
-              <button class="botao btn btn-primary" id="btnSelecionarArquivo" type="button">
-                Selecionar dados
-              </button>
-            </menu>
-          </div>
-
-          <div class="upload-state upload-state-filled hidden" id="uploadStateFilled">
-            <div class="estadoRecebidoCabecalho">
-              <span class="estadoRecebidoBadge">ARQUIVO RECEBIDO</span>
+    <main class="container">
+        <section class="card">
+            <div class="card-header">
+                <h2>Configuração</h2>
+                <span class="badge">Excel + Distribuição</span>
             </div>
 
-            <div class="arquivoRecebidoCard" id="arquivoRecebidoCard">
-              <div class="arquivoRecebidoIcone">📊</div>
+            <div class="form-grid">
+                <div class="field field-full">
+                    <label for="baseFile">Arquivo base (.xlsx)</label>
+                    <input id="baseFile" type="file" accept=".xlsx,.xls,.xlsm" />
+                </div>
 
-              <div class="arquivoRecebidoConteudo">
-                <div class="arquivoRecebidoNome" id="arquivoRecebidoNome">arquivo.xlsx</div>
-                <div class="arquivoRecebidoMeta" id="arquivoRecebidoMeta">0 KB • XLSX</div>
-              </div>
+                <div class="field">
+                    <label for="hasCota">Vai ter cota?</label>
+                    <select id="hasCota">
+                        <option value="sim">Sim</option>
+                        <option value="nao">Não</option>
+                    </select>
+                </div>
 
-              <div class="arquivoRecebidoAcoes">
-                <button class="btn btn-secondary" id="btnTrocarArquivo" type="button">
-                  Trocar arquivo
-                </button>
-                <button class="btn btn-danger-outline" id="btnRemoverArquivo" type="button">
-                  Remover
-                </button>
-              </div>
+                <div class="field cota-only">
+                    <label for="cotaFile">Arquivo COTA (.csv)</label>
+                    <input id="cotaFile" type="file" accept=".csv,text/csv" />
+                </div>
+
+                <div class="field no-cota-only">
+                    <label for="maxNumbersPerPesq">Máximo de telefones por P (sem cota)</label>
+                    <input
+                        id="maxNumbersPerPesq"
+                        type="number"
+                        min="1"
+                        step="1"
+                        placeholder="Ex.: 1200"
+                    />
+                </div>
             </div>
 
-            <p class="estadoRecebidoTexto">
-              O arquivo foi carregado com sucesso. Agora você já pode processá-lo.
-            </p>
-          </div>
+            <div id="manualDaysSection" class="manual-days hidden">
+                <div class="manual-days-header">
+                    <h3>Dias de pesquisa</h3>
+                    <button id="addDayBtn" class="secondary-btn" type="button">Adicionar novo dia de pesquisa</button>
+                </div>
+
+                <div id="manualDaysList" class="days-list"></div>
+            </div>
+
+            <div class="actions">
+                <button id="processBtn" class="primary-btn" type="button">Processar arquivo</button>
+                <button id="downloadBtn" class="secondary-btn hidden" type="button">Download do arquivo final</button>
+            </div>
+
+            <div id="logBox" class="log-box hidden"></div>
         </section>
 
-        <div class="filtrosConsulta">
-          <div class="filtroItem">
-            <label for="selectEstado" class="filtroLabel">Estado</label>
-            <select id="selectEstado" class="filtroSelect">
-              <option value="">Todos os estados</option>
-            </select>
-          </div>
+        <section id="resultSection" class="card hidden">
+            <div class="card-header">
+                <h2>Pré-visualização</h2>
+                <span class="badge success">Pronto</span>
+            </div>
 
-          <div class="filtroItem">
-            <label for="selectCidade" class="filtroLabel">Cidade</label>
-            <select id="selectCidade" class="filtroSelect">
-              <option value="">Todas as cidades</option>
-            </select>
-          </div>
-        </div>
+            <div class="table-wrap">
+                <table id="previewTable">
+                    <thead></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
 
-        <div class="toolbar">
-          <button type="button" class="btn btn-primary" id="btnProcessarArquivo" disabled>
-            Ler e gerar arquivo
-          </button>
-        </div>
-      </form>
-    </section>
-
-    <section class="panel results-panel">
-      <div class="results-header">
-        <div>
-          <h2 class="section-title">Arquivos Criados</h2>
-          <p class="section-subtitle">
-            O arquivo final aparecerá abaixo em uma única linha.
-          </p>
-        </div>
-      </div>
-
-      <div id="emptyFiles" class="empty-state">
-        Nenhum arquivo criado ainda.
-      </div>
-
-      <div id="listaArquivos" class="file-list hidden"></div>
-    </section>
-  </main>
-
-  <div id="modalPreview" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" id="modalBackdrop"></div>
-
-    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modalTitulo">
-      <div class="modal-header">
-        <div>
-          <h2 class="section-title" id="modalTitulo">Prévia do Arquivo Criado</h2>
-          <p class="section-subtitle">
-            Exibindo até 20 linhas no mesmo padrão da planilha enviada.
-          </p>
-        </div>
-
-        <button id="btnFecharModal" type="button" class="btn btn-secondary">
-          Fechar
-        </button>
-      </div>
-
-      <div class="table-wrap modal-table-wrap">
-        <table class="preview-table">
-          <thead id="arquivoPreviewHead"></thead>
-          <tbody id="arquivoPreviewBody"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal de Confirmação -->
-  <div id="modalConfirmacaoRemocao" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" id="modalConfirmacaoBackdrop"></div>
-
-    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="tituloConfirmacaoRemocao">
-      <div class="modal-header">
-        <div>
-          <h2 class="section-title" id="tituloConfirmacaoRemocao">Confirmar remoção</h2>
-          <p class="section-subtitle">
-            Tem certeza que deseja remover o arquivo selecionado e apagar também o arquivo gerado?
-          </p>
-        </div>
-      </div>
-
-      <div class="modal-actions" style="padding: 0 24px 24px 24px;">
-        <button id="btnCancelarRemocao" type="button" class="btn btn-secondary">
-          Cancelar
-        </button>
-        <button id="btnConfirmarRemocao" type="button" class="btn btn-danger">
-          Sim, remover
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <div id="footer"></div>
+    <div id="footer"></div>
 </body>
 
 </html>
