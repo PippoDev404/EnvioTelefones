@@ -28,6 +28,9 @@ let generatedFileName = "";
 
 const CATEGORY_PRIORITY = ["PESQUISA", "VIVO", "CLARO", "OI", "TIM", "BRASIL"];
 const SOBRA_LABEL = "SOBRA";
+const PREVIEW_LIMIT = 60;
+const EXPORT_CHUNK_SIZE = 20000;
+const UI_YIELD_EVERY = 5000;
 
 hasCotaSelect?.addEventListener("change", syncModeUI);
 addDayBtn?.addEventListener("click", () => createManualDayCard());
@@ -128,6 +131,18 @@ function refreshManualDayTitles() {
 /* =========================
    UTILITÁRIOS
 ========================= */
+
+function sleepFrame() {
+    return new Promise((resolve) => {
+        setTimeout(resolve, 0);
+    });
+}
+
+async function maybeYield(counter) {
+    if (counter > 0 && counter % UI_YIELD_EVERY === 0) {
+        await sleepFrame();
+    }
+}
 
 function showLog() {
     if (logBox) logBox.classList.remove("hidden");
@@ -350,14 +365,6 @@ function getCategoryPriorityIndex(category) {
     return idx === -1 ? 999 : idx;
 }
 
-function sortRowsByCategory(rows) {
-    return [...rows].sort((a, b) => {
-        const diff = getCategoryPriorityIndex(a.categoria) - getCategoryPriorityIndex(b.categoria);
-        if (diff !== 0) return diff;
-        return a.originalIndex - b.originalIndex;
-    });
-}
-
 function getPesqSortOrder(pesqValue) {
     const normalized = String(pesqValue ?? "").trim().toUpperCase();
 
@@ -370,65 +377,10 @@ function getPesqSortOrder(pesqValue) {
     return Number.MAX_SAFE_INTEGER - 2;
 }
 
-function sortFinalRows(rows) {
-    return [...rows].sort((a, b) => {
-        const pesqDiff = getPesqSortOrder(a[8]) - getPesqSortOrder(b[8]);
-        if (pesqDiff !== 0) return pesqDiff;
-
-        const aDate = String(a[9] ?? "");
-        const bDate = String(b[9] ?? "");
-        if (aDate !== bDate) return aDate.localeCompare(bDate, "pt-BR");
-
-        const aCategoryDiff = getCategoryPriorityIndex(a[5]) - getCategoryPriorityIndex(b[5]);
-        if (aCategoryDiff !== 0) return aCategoryDiff;
-
-        const aIdp = String(a[0] ?? "");
-        const bIdp = String(b[0] ?? "");
-        return aIdp.localeCompare(bIdp, "pt-BR", { numeric: true, sensitivity: "base" });
-    });
-}
-
-function buildFinalRows(rows, dataStartIndex, columnIndexes, diaPesqColIndex) {
-    const finalRows = [];
-
-    for (let i = dataStartIndex; i < rows.length; i++) {
-        const row = rows[i] || [];
-        if (isRowEmpty(row)) continue;
-
-        const pesqValue = String(row[columnIndexes.pesq] ?? "").trim();
-        if (!pesqValue) continue;
-
-        const diaPesqValue =
-            diaPesqColIndex >= 0 ? getDisplayDate(row[diaPesqColIndex]) : "";
-
-        finalRows.push([
-            row[columnIndexes.idp] ?? "",
-            row[columnIndexes.cidade] ?? "",
-            row[columnIndexes.estado] ?? "",
-            row[columnIndexes.regiao] ?? "",
-            row[columnIndexes.setor] ?? "",
-            row[columnIndexes.categoria] ?? "",
-            row[columnIndexes.tf1] ?? "",
-            row[columnIndexes.tf2] ?? "",
-            pesqValue,
-            diaPesqValue ?? "",
-        ]);
-    }
-
-    return sortFinalRows(finalRows);
-}
-
-function autoFitSheetColumns(sheetData, worksheet) {
-    const widths = [];
-
-    sheetData.forEach((row) => {
-        row.forEach((cell, index) => {
-            const len = String(cell ?? "").length;
-            widths[index] = Math.max(widths[index] || 10, Math.min(len + 2, 35));
-        });
-    });
-
-    worksheet["!cols"] = widths.map((wch) => ({ wch }));
+function autoFitSheetColumnsByHeaders(headers) {
+    return headers.map((header) => ({
+        wch: Math.max(12, Math.min(String(header ?? "").length + 4, 30))
+    }));
 }
 
 function handleDownload() {
@@ -437,15 +389,6 @@ function handleDownload() {
         return;
     }
     triggerDownload(generatedBlob, generatedFileName);
-}
-
-function assignRowsToPesquisador(rowsToAssign, pesquisador, date, rows, pesqCol, dataPesquisaCol) {
-    rowsToAssign.forEach((item) => {
-        const matrixIndex = item.rowNumberExcel - 1;
-        if (!rows[matrixIndex]) rows[matrixIndex] = [];
-        rows[matrixIndex][pesqCol] = pesquisador;
-        rows[matrixIndex][dataPesquisaCol] = date;
-    });
 }
 
 function computeMaxPerPByAvailable(totalRows, totalPesquisadores) {
@@ -519,27 +462,70 @@ function splitCotaRowsByDate(cotaRows) {
     return groups;
 }
 
-function buildPoolsByMode(usefulRows) {
+/* =========================
+   LINHAS LEVES
+========================= */
+
+async function buildUsefulRowRefs(rows, dataStartIndex, indexes) {
+    const usefulRefs = [];
+
+    for (let i = dataStartIndex; i < rows.length; i++) {
+        const row = rows[i] || [];
+        if (isRowEmpty(row)) continue;
+
+        usefulRefs.push({
+            rowIndex: i,
+            rowNumberExcel: i + 1,
+            originalIndex: i - dataStartIndex,
+            estado: String(row[indexes.estado] ?? "").trim(),
+            cidade: String(row[indexes.cidade] ?? "").trim(),
+            regiao: String(row[indexes.regiao] ?? "").trim(),
+            setor: String(row[indexes.setor] ?? "").trim(),
+            categoria: String(row[indexes.categoria] ?? "").trim(),
+        });
+
+        await maybeYield(i - dataStartIndex);
+    }
+
+    return usefulRefs;
+}
+
+async function buildPoolsByMode(usefulRefs) {
     const estadoPools = new Map();
     const setorPools = new Map();
 
-    usefulRows.forEach((row) => {
-        const estadoKey = normalizeText(row.estado);
-        const setorKey = normalizeSetorValue(row.setor);
+    for (let i = 0; i < usefulRefs.length; i++) {
+        const ref = usefulRefs[i];
+        const estadoKey = normalizeText(ref.estado);
+        const setorKey = normalizeSetorValue(ref.setor);
 
         if (!estadoPools.has(estadoKey)) estadoPools.set(estadoKey, []);
-        estadoPools.get(estadoKey).push(row);
-
         if (!setorPools.has(setorKey)) setorPools.set(setorKey, []);
-        setorPools.get(setorKey).push(row);
-    });
+
+        estadoPools.get(estadoKey).push(ref);
+        setorPools.get(setorKey).push(ref);
+
+        await maybeYield(i);
+    }
 
     for (const [key, value] of estadoPools.entries()) {
-        estadoPools.set(key, sortRowsByCategory(value));
+        value.sort((a, b) => {
+            const diff = getCategoryPriorityIndex(a.categoria) - getCategoryPriorityIndex(b.categoria);
+            if (diff !== 0) return diff;
+            return a.originalIndex - b.originalIndex;
+        });
+        estadoPools.set(key, value);
+        await sleepFrame();
     }
 
     for (const [key, value] of setorPools.entries()) {
-        setorPools.set(key, sortRowsByCategory(value));
+        value.sort((a, b) => {
+            const diff = getCategoryPriorityIndex(a.categoria) - getCategoryPriorityIndex(b.categoria);
+            if (diff !== 0) return diff;
+            return a.originalIndex - b.originalIndex;
+        });
+        setorPools.set(key, value);
+        await sleepFrame();
     }
 
     return { estadoPools, setorPools };
@@ -549,11 +535,12 @@ function buildPoolsByMode(usefulRows) {
    DISTRIBUIÇÃO POR CATEGORIA
 ========================= */
 
-function buildOrderedCategoryGroups(rows) {
+async function buildOrderedCategoryGroups(rowRefs) {
     const grouped = new Map();
     const others = new Map();
 
-    rows.forEach((item) => {
+    for (let i = 0; i < rowRefs.length; i++) {
+        const item = rowRefs[i];
         const normalized = normalizeCategory(item.categoria);
 
         if (CATEGORY_PRIORITY.includes(normalized)) {
@@ -563,34 +550,46 @@ function buildOrderedCategoryGroups(rows) {
             if (!others.has(normalized)) others.set(normalized, []);
             others.get(normalized).push(item);
         }
-    });
+
+        await maybeYield(i);
+    }
 
     const orderedGroups = [];
 
-    CATEGORY_PRIORITY.forEach((category) => {
+    for (let i = 0; i < CATEGORY_PRIORITY.length; i++) {
+        const category = CATEGORY_PRIORITY[i];
         const arr = grouped.get(category) || [];
         if (arr.length) {
+            arr.sort((a, b) => a.originalIndex - b.originalIndex);
             orderedGroups.push({
                 category,
-                rows: [...arr].sort((a, b) => a.originalIndex - b.originalIndex)
+                rows: arr
             });
         }
-    });
+        await sleepFrame();
+    }
 
-    [...others.entries()]
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .forEach(([category, arr]) => {
-            orderedGroups.push({
-                category,
-                rows: [...arr].sort((a, b) => a.originalIndex - b.originalIndex)
-            });
+    const otherEntries = [...others.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+    for (let i = 0; i < otherEntries.length; i++) {
+        const [category, arr] = otherEntries[i];
+        arr.sort((a, b) => a.originalIndex - b.originalIndex);
+
+        orderedGroups.push({
+            category,
+            rows: arr
         });
+
+        if (i % 20 === 0) {
+            await sleepFrame();
+        }
+    }
 
     return orderedGroups;
 }
 
-function distributeRowsByCategoryRoundRobin(rowsPool, targets) {
-    const categoryGroups = buildOrderedCategoryGroups(rowsPool);
+async function distributeRowsByCategoryRoundRobin(rowPool, targets) {
+    const categoryGroups = await buildOrderedCategoryGroups(rowPool);
     let totalAssigned = 0;
 
     for (let groupIndex = 0; groupIndex < categoryGroups.length; groupIndex++) {
@@ -598,18 +597,31 @@ function distributeRowsByCategoryRoundRobin(rowsPool, targets) {
         let cursor = 0;
 
         while (cursor < group.rows.length) {
-            const targetsNeedingRows = targets.filter((target) => target.remaining > 0);
+            const targetsNeedingRows = [];
+
+            for (let t = 0; t < targets.length; t++) {
+                if (targets[t].remaining > 0) {
+                    targetsNeedingRows.push(targets[t]);
+                }
+            }
 
             if (!targetsNeedingRows.length) {
                 const remainingPool = [];
 
                 for (let i = groupIndex; i < categoryGroups.length; i++) {
                     const currentGroup = categoryGroups[i];
+
                     if (i === groupIndex) {
-                        remainingPool.push(...currentGroup.rows.slice(cursor));
+                        for (let j = cursor; j < currentGroup.rows.length; j++) {
+                            remainingPool.push(currentGroup.rows[j]);
+                        }
                     } else {
-                        remainingPool.push(...currentGroup.rows);
+                        for (let j = 0; j < currentGroup.rows.length; j++) {
+                            remainingPool.push(currentGroup.rows[j]);
+                        }
                     }
+
+                    await sleepFrame();
                 }
 
                 return { totalAssigned, remainingPool };
@@ -617,23 +629,49 @@ function distributeRowsByCategoryRoundRobin(rowsPool, targets) {
 
             let assignedInThisRound = false;
 
-            for (const target of targetsNeedingRows) {
+            for (let i = 0; i < targetsNeedingRows.length; i++) {
+                const target = targetsNeedingRows[i];
+
                 if (cursor >= group.rows.length) break;
                 if (target.remaining <= 0) continue;
 
-                const rowItem = group.rows[cursor++];
-                target.rows.push(rowItem);
+                const rowRef = group.rows[cursor];
+                cursor += 1;
+
+                target.rows.push(rowRef);
                 target.remaining -= 1;
                 totalAssigned += 1;
                 assignedInThisRound = true;
             }
 
             if (!assignedInThisRound) break;
+
+            if (cursor % UI_YIELD_EVERY === 0) {
+                await sleepFrame();
+            }
         }
+
+        await sleepFrame();
     }
 
-    const assignedSet = new Set(targets.flatMap((t) => t.rows));
-    const remainingPool = rowsPool.filter((row) => !assignedSet.has(row));
+    const assignedSet = new Set();
+
+    for (let i = 0; i < targets.length; i++) {
+        const targetRows = targets[i].rows;
+        for (let j = 0; j < targetRows.length; j++) {
+            assignedSet.add(targetRows[j]);
+        }
+        await sleepFrame();
+    }
+
+    const remainingPool = [];
+    for (let i = 0; i < rowPool.length; i++) {
+        const rowRef = rowPool[i];
+        if (!assignedSet.has(rowRef)) {
+            remainingPool.push(rowRef);
+        }
+        await maybeYield(i);
+    }
 
     return { totalAssigned, remainingPool };
 }
@@ -642,11 +680,10 @@ function assignTargetsToSheet(targets, rows, pesqCol, dataPesquisaCol) {
     let total = 0;
 
     targets.forEach((target) => {
-        target.rows.forEach((item) => {
-            const matrixIndex = item.rowNumberExcel - 1;
-            if (!rows[matrixIndex]) rows[matrixIndex] = [];
-            rows[matrixIndex][pesqCol] = target.pesquisador;
-            rows[matrixIndex][dataPesquisaCol] = target.date;
+        target.rows.forEach((ref) => {
+            if (!rows[ref.rowIndex]) rows[ref.rowIndex] = [];
+            rows[ref.rowIndex][pesqCol] = target.pesquisador;
+            rows[ref.rowIndex][dataPesquisaCol] = target.date;
             total += 1;
         });
     });
@@ -654,18 +691,17 @@ function assignTargetsToSheet(targets, rows, pesqCol, dataPesquisaCol) {
     return total;
 }
 
-function markUnusedRowsAsSobra(usefulRows, rows, pesqCol, dataPesquisaCol) {
+function markUnusedRowsAsSobra(usefulRefs, rows, pesqCol, dataPesquisaCol) {
     let sobraCount = 0;
 
-    usefulRows.forEach((item) => {
-        const matrixIndex = item.rowNumberExcel - 1;
-        if (!rows[matrixIndex]) rows[matrixIndex] = [];
+    usefulRefs.forEach((ref) => {
+        if (!rows[ref.rowIndex]) rows[ref.rowIndex] = [];
 
-        const currentPesq = String(rows[matrixIndex][pesqCol] ?? "").trim();
+        const currentPesq = String(rows[ref.rowIndex][pesqCol] ?? "").trim();
 
         if (!currentPesq) {
-            rows[matrixIndex][pesqCol] = SOBRA_LABEL;
-            rows[matrixIndex][dataPesquisaCol] = "";
+            rows[ref.rowIndex][pesqCol] = SOBRA_LABEL;
+            rows[ref.rowIndex][dataPesquisaCol] = "";
             sobraCount += 1;
         }
     });
@@ -715,9 +751,9 @@ function splitIntegerEqually(total, parts) {
     return Array.from({ length: parts }, (_, index) => base + (index < remainder ? 1 : 0));
 }
 
-function buildSharedPoolsForCota(usefulRows, cotaRowsByDate) {
+async function buildSharedPoolsForCota(usefulRefs, cotaRowsByDate) {
     const bucketGroups = groupDemandsByBucketAcrossDates(cotaRowsByDate);
-    const { estadoPools, setorPools } = buildPoolsByMode(usefulRows);
+    const { estadoPools, setorPools } = await buildPoolsByMode(usefulRefs);
 
     const sharedPools = new Map();
 
@@ -738,21 +774,131 @@ function buildSharedPoolsForCota(usefulRows, cotaRowsByDate) {
         let cursor = 0;
         const perDatePools = new Map();
 
-        dates.forEach((date, index) => {
+        for (let index = 0; index < dates.length; index++) {
+            const date = dates[index];
             const qty = equalParts[index];
             const slice = sourcePool.slice(cursor, cursor + qty);
             cursor += qty;
             perDatePools.set(date, slice);
-        });
+        }
 
         sharedPools.set(bucketKey, {
             mode: bucketInfo.mode,
             key: bucketInfo.key,
             perDatePools
         });
+
+        await sleepFrame();
     }
 
     return sharedPools;
+}
+
+/* =========================
+   SAÍDA FINAL OTIMIZADA
+========================= */
+
+async function buildFinalRowRefs(rows, dataStartIndex, columnIndexes, diaPesqColIndex) {
+    const refs = [];
+
+    for (let i = dataStartIndex; i < rows.length; i++) {
+        const row = rows[i] || [];
+        if (isRowEmpty(row)) continue;
+
+        const pesqValue = String(row[columnIndexes.pesq] ?? "").trim();
+        if (!pesqValue) continue;
+
+        const diaPesqValue =
+            diaPesqColIndex >= 0 ? getDisplayDate(row[diaPesqColIndex]) : "";
+
+        refs.push({
+            rowIndex: i,
+            pesqOrder: getPesqSortOrder(pesqValue),
+            dateValue: String(diaPesqValue ?? ""),
+            categoryOrder: getCategoryPriorityIndex(row[columnIndexes.categoria] ?? ""),
+            idpValue: String(row[columnIndexes.idp] ?? "")
+        });
+
+        await maybeYield(i - dataStartIndex);
+    }
+
+    refs.sort((a, b) => {
+        const pesqDiff = a.pesqOrder - b.pesqOrder;
+        if (pesqDiff !== 0) return pesqDiff;
+
+        const dateDiff = a.dateValue.localeCompare(b.dateValue, "pt-BR");
+        if (dateDiff !== 0) return dateDiff;
+
+        const catDiff = a.categoryOrder - b.categoryOrder;
+        if (catDiff !== 0) return catDiff;
+
+        return a.idpValue.localeCompare(b.idpValue, "pt-BR", {
+            numeric: true,
+            sensitivity: "base"
+        });
+    });
+
+    await sleepFrame();
+    return refs;
+}
+
+function buildFinalOutputRow(rawRow, columnIndexes, diaPesqColIndex) {
+    const diaPesqValue =
+        diaPesqColIndex >= 0 ? getDisplayDate(rawRow[diaPesqColIndex]) : "";
+
+    return [
+        rawRow[columnIndexes.idp] ?? "",
+        rawRow[columnIndexes.cidade] ?? "",
+        rawRow[columnIndexes.estado] ?? "",
+        rawRow[columnIndexes.regiao] ?? "",
+        rawRow[columnIndexes.setor] ?? "",
+        rawRow[columnIndexes.categoria] ?? "",
+        rawRow[columnIndexes.tf1] ?? "",
+        rawRow[columnIndexes.tf2] ?? "",
+        rawRow[columnIndexes.pesq] ?? "",
+        diaPesqValue ?? "",
+    ];
+}
+
+async function writeFinalWorkbookInChunks({
+    rows,
+    sortedRefs,
+    finalHeaders,
+    columnIndexes,
+    diaPesqColIndex
+}) {
+    const wb = XLSX.utils.book_new();
+
+    const ws = XLSX.utils.aoa_to_sheet([finalHeaders]);
+    ws["!cols"] = autoFitSheetColumnsByHeaders(finalHeaders);
+
+    let excelRowPointer = 1;
+
+    for (let start = 0; start < sortedRefs.length; start += EXPORT_CHUNK_SIZE) {
+        const end = Math.min(start + EXPORT_CHUNK_SIZE, sortedRefs.length);
+        const chunkRows = [];
+
+        for (let i = start; i < end; i++) {
+            const ref = sortedRefs[i];
+            chunkRows.push(
+                buildFinalOutputRow(rows[ref.rowIndex] || [], columnIndexes, diaPesqColIndex)
+            );
+        }
+
+        XLSX.utils.sheet_add_aoa(ws, chunkRows, { origin: { r: excelRowPointer, c: 0 } });
+        excelRowPointer += chunkRows.length;
+
+        await sleepFrame();
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, "RESULTADO");
+    return wb;
+}
+
+function buildPreviewRows(rows, sortedRefs, columnIndexes, diaPesqColIndex, limit = PREVIEW_LIMIT) {
+    return sortedRefs
+        .slice(0, limit)
+        .map((ref) => buildFinalOutputRow(rows[ref.rowIndex] || [], columnIndexes, diaPesqColIndex));
 }
 
 /* =========================
@@ -795,7 +941,12 @@ async function handleProcess() {
 
         addLog("Lendo arquivo Excel...", "ok");
         const baseBuffer = await getArrayBuffer(baseFile);
-        const workbook = XLSX.read(baseBuffer, { type: "array", cellDates: false });
+
+        const workbook = XLSX.read(baseBuffer, {
+            type: "array",
+            cellDates: false,
+            dense: true,
+        });
 
         const mainSheetName = findMainSheetName(workbook);
         if (!mainSheetName) {
@@ -814,7 +965,6 @@ async function handleProcess() {
         const headerRowIndex = 1;
         const headerRow = rows[headerRowIndex] || [];
         const dataStartIndex = headerRowIndex + 1;
-        const dataRows = rows.slice(dataStartIndex);
 
         const idpCol = findHeaderIndex(headerRow, ["IDP"]);
         const cidadeCol = findHeaderIndex(headerRow, ["CIDADE"]);
@@ -858,81 +1008,91 @@ async function handleProcess() {
         ensureRequiredColumn(pesqCol, "N° PESQ");
         ensureRequiredColumn(dataPesquisaCol, "DIA PESQ");
 
-        const usefulRows = dataRows
-            .map((row, dataIndex) => ({
-                row,
-                dataIndex,
-                rowNumberExcel: dataStartIndex + dataIndex + 1,
-                originalIndex: dataIndex,
-                cidade: String(row[cidadeCol] ?? "").trim(),
-                estado: String(row[estadoCol] ?? "").trim(),
-                regiao: String(row[regiaoCol] ?? "").trim(),
-                setor: String(row[setorCol] ?? "").trim(),
-                categoria: String(row[categoriaCol] ?? "").trim(),
-            }))
-            .filter(({ row }) => !isRowEmpty(row));
+        const usefulRefs = await buildUsefulRowRefs(rows, dataStartIndex, {
+            cidade: cidadeCol,
+            estado: estadoCol,
+            regiao: regiaoCol,
+            setor: setorCol,
+            categoria: categoriaCol
+        });
 
-        if (!usefulRows.length) {
+        if (!usefulRefs.length) {
             addLog("Não há linhas úteis na aba principal.", "error");
             return;
         }
 
-        addLog(`Total de linhas úteis encontradas: ${usefulRows.length}`, "ok");
+        addLog(`Total de linhas úteis encontradas: ${usefulRefs.length}`, "ok");
         addLog("Limpando colunas antigas de N° PESQ e DIA PESQ...", "ok");
         clearColumnsInRows(rows, dataStartIndex, [pesqCol, dataPesquisaCol]);
 
         if (hasCota) {
             await processWithCota({
                 rows,
-                usefulRows,
+                usefulRefs,
                 dataPesquisaCol,
                 pesqCol
             });
         } else {
-            processWithoutCota({
+            await processWithoutCota({
                 rows,
-                usefulRows,
+                usefulRefs,
                 dataPesquisaCol,
                 pesqCol
             });
         }
 
-        const sobraCount = markUnusedRowsAsSobra(usefulRows, rows, pesqCol, dataPesquisaCol);
+        const sobraCount = markUnusedRowsAsSobra(usefulRefs, rows, pesqCol, dataPesquisaCol);
         addLog(`Linhas marcadas como SOBRA: ${sobraCount}`, sobraCount > 0 ? "ok" : "warn");
 
         const finalHeaders = ["IDP", "CIDADE", "ESTADO", "REGIÃO", "SETOR", "CATEGORIA", "TF1", "TF2", "N° PESQ", "DIA PESQ"];
-        const finalDataRows = buildFinalRows(
+
+        addLog("Montando referências finais para exportação...", "ok");
+
+        const columnIndexes = {
+            idp: idpCol,
+            cidade: cidadeCol,
+            estado: estadoCol,
+            regiao: regiaoCol,
+            setor: setorCol,
+            categoria: categoriaCol,
+            tf1: tf1Col,
+            tf2: tf2Col,
+            pesq: pesqCol,
+        };
+
+        const finalRowRefs = await buildFinalRowRefs(
             rows,
             dataStartIndex,
-            {
-                idp: idpCol,
-                cidade: cidadeCol,
-                estado: estadoCol,
-                regiao: regiaoCol,
-                setor: setorCol,
-                categoria: categoriaCol,
-                tf1: tf1Col,
-                tf2: tf2Col,
-                pesq: pesqCol,
-            },
+            columnIndexes,
             dataPesquisaCol
         );
 
-        if (!finalDataRows.length) {
+        if (!finalRowRefs.length) {
             addLog("Nenhuma linha final foi gerada.", "warn");
             return;
         }
 
-        renderPreview(finalHeaders, finalDataRows);
-        addLog(`Linhas exportadas no arquivo final: ${finalDataRows.length}`, "ok");
+        const previewRows = buildPreviewRows(
+            rows,
+            finalRowRefs,
+            columnIndexes,
+            dataPesquisaCol,
+            PREVIEW_LIMIT
+        );
 
-        const finalWorkbook = XLSX.utils.book_new();
-        const finalSheetData = [finalHeaders, ...finalDataRows];
-        const finalSheet = XLSX.utils.aoa_to_sheet(finalSheetData);
+        renderPreview(finalHeaders, previewRows);
+        addLog(`Linhas exportadas no arquivo final: ${finalRowRefs.length}`, "ok");
+        addLog("Gerando planilha final em blocos para economizar memória...", "ok");
 
-        autoFitSheetColumns(finalSheetData, finalSheet);
+        const finalWorkbook = await writeFinalWorkbookInChunks({
+            rows,
+            sortedRefs: finalRowRefs,
+            finalHeaders,
+            columnIndexes,
+            diaPesqColIndex: dataPesquisaCol
+        });
 
-        XLSX.utils.book_append_sheet(finalWorkbook, finalSheet, "RESULTADO");
+        addLog("Escrevendo o arquivo XLSX final...", "ok");
 
         const wbout = XLSX.write(finalWorkbook, {
             bookType: "xlsx",
@@ -955,9 +1115,9 @@ async function handleProcess() {
     }
 }
 
-function processWithoutCota({
+async function processWithoutCota({
     rows,
-    usefulRows,
+    usefulRefs,
     dataPesquisaCol,
     pesqCol
 }) {
@@ -985,8 +1145,8 @@ function processWithoutCota({
     addLog(`Total de pesquisadores informados: ${totalPesquisadores}`, "ok");
     addLog(`Telefones necessários: ${totalNeeded}`, "ok");
 
-    if (usefulRows.length < totalNeeded) {
-        const maxPerP = computeMaxPerPByAvailable(usefulRows.length, totalPesquisadores);
+    if (usefulRefs.length < totalNeeded) {
+        const maxPerP = computeMaxPerPByAvailable(usefulRefs.length, totalPesquisadores);
         throw new Error(`O máximo de telefones por P são ${maxPerP} de acordo com a quantidade de linhas.`);
     }
 
@@ -1005,11 +1165,11 @@ function processWithoutCota({
         });
     });
 
-    const { totalAssigned } = distributeRowsByCategoryRoundRobin(usefulRows, targets);
+    const { totalAssigned } = await distributeRowsByCategoryRoundRobin(usefulRefs, targets);
 
     const totalRemaining = targets.reduce((sum, target) => sum + target.remaining, 0);
     if (totalRemaining > 0) {
-        const maxPerP = computeMaxPerPByAvailable(usefulRows.length, totalPesquisadores);
+        const maxPerP = computeMaxPerPByAvailable(usefulRefs.length, totalPesquisadores);
         throw new Error(`O máximo de telefones por P são ${maxPerP} de acordo com a quantidade de linhas.`);
     }
 
@@ -1033,7 +1193,7 @@ function processWithoutCota({
 
 async function processWithCota({
     rows,
-    usefulRows,
+    usefulRefs,
     dataPesquisaCol,
     pesqCol
 }) {
@@ -1054,11 +1214,12 @@ async function processWithCota({
         throw new Error('Não encontrei a coluna "DIA" preenchida corretamente no arquivo COTA.');
     }
 
-    const sharedPools = buildSharedPoolsForCota(usefulRows, cotaRowsByDate);
+    const sharedPools = await buildSharedPoolsForCota(usefulRefs, cotaRowsByDate);
     let totalAtribuido = 0;
 
     for (const [date, cotaRowsForDate] of cotaRowsByDate.entries()) {
         addLog(`Processando data ${date}...`, "ok");
+        await sleepFrame();
 
         const demands = buildCotaDemandListForDate(cotaRowsForDate);
 
@@ -1068,8 +1229,10 @@ async function processWithCota({
         }
 
         const totalsByBucket = new Map();
+        const demandsByBucket = new Map();
 
-        demands.forEach((demand) => {
+        for (let i = 0; i < demands.length; i++) {
+            const demand = demands[i];
             const bucketKey = `${demand.setorMode}::${demand.setorKey}`;
 
             if (!totalsByBucket.has(bucketKey)) {
@@ -1080,8 +1243,13 @@ async function processWithCota({
                 });
             }
 
+            if (!demandsByBucket.has(bucketKey)) {
+                demandsByBucket.set(bucketKey, []);
+            }
+
             totalsByBucket.get(bucketKey).totalQuestionarios += demand.questionarios;
-        });
+            demandsByBucket.get(bucketKey).push(demand);
+        }
 
         const multiplierByBucket = new Map();
 
@@ -1100,12 +1268,14 @@ async function processWithCota({
                 `Data ${date} | ${bucketInfo.mode === "estado" ? "Estado" : "Setor"} ${bucketInfo.key}: ${available} telefones disponíveis para esta data, ${bucketInfo.totalQuestionarios} questionários, multiplicador final ${multiplier}.`,
                 multiplier > 0 ? "ok" : "warn"
             );
+
+            await sleepFrame();
         }
 
         let totalData = 0;
 
         for (const [bucketKey] of totalsByBucket.entries()) {
-            const bucketDemands = demands.filter((demand) => `${demand.setorMode}::${demand.setorKey}` === bucketKey);
+            const bucketDemands = demandsByBucket.get(bucketKey) || [];
             const multiplier = multiplierByBucket.get(bucketKey) || 0;
             if (multiplier <= 0) continue;
 
@@ -1120,7 +1290,7 @@ async function processWithCota({
                 rows: []
             }));
 
-            const { totalAssigned, remainingPool } = distributeRowsByCategoryRoundRobin(poolForDate, targets);
+            const { totalAssigned, remainingPool } = await distributeRowsByCategoryRoundRobin(poolForDate, targets);
 
             shared.perDatePools.set(date, remainingPool);
 
@@ -1131,16 +1301,19 @@ async function processWithCota({
                 `Data ${date} | Grupo ${bucketKey}: ${totalAssigned} telefones distribuídos em rodízio por categoria.`,
                 totalAssigned > 0 ? "ok" : "warn"
             );
+
+            await sleepFrame();
         }
 
         addLog(`Data ${date}: total preenchido ${totalData}.`, "ok");
+        await sleepFrame();
     }
 
     addLog(`Total preenchido em N° PESQ: ${totalAtribuido}`, "ok");
     addLog(`Distribuição por categoria em rodízio por grupo: ${CATEGORY_PRIORITY.join(" → ")}`, "ok");
 }
 
-function renderPreview(headers, dataRows, limit = 60) {
+function renderPreview(headers, dataRows, limit = PREVIEW_LIMIT) {
     if (!previewHead || !previewBody || !resultSection) return;
 
     previewHead.innerHTML = "";
