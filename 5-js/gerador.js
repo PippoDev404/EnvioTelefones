@@ -17,10 +17,10 @@ const manualDaysList = document.querySelector("#manualDaysList");
 const addDayBtn = document.querySelector("#addDayBtn");
 
 const logBox = document.querySelector("#logBox");
-const resultSection = document.querySelector("#resultSection");
-const previewTable = document.querySelector("#previewTable");
-const previewHead = previewTable.querySelector("thead");
-const previewBody = previewTable.querySelector("tbody");
+
+const previewSection = document.querySelector("#previewSection");
+const previewMeta = document.querySelector("#previewMeta");
+const previewTableWrapper = document.querySelector("#previewTableWrapper");
 
 let manualDayCounter = 0;
 let generatedBlob = null;
@@ -28,7 +28,6 @@ let generatedFileName = "";
 
 const CATEGORY_PRIORITY = ["PESQUISA", "VIVO", "CLARO", "OI", "TIM", "BRASIL"];
 const SOBRA_LABEL = "SOBRA";
-const PREVIEW_LIMIT = 60;
 const EXPORT_CHUNK_SIZE = 20000;
 const UI_YIELD_EVERY = 5000;
 
@@ -128,6 +127,110 @@ function refreshManualDayTitles() {
     });
 }
 
+function clearPreview() {
+    if (previewTableWrapper) previewTableWrapper.innerHTML = "";
+    if (previewMeta) {
+        previewMeta.innerHTML = "";
+        previewMeta.classList.add("hidden");
+    }
+    if (previewSection) previewSection.classList.add("hidden");
+}
+
+function renderPreviewTable(rows) {
+    if (!previewSection || !previewTableWrapper) return;
+
+    previewSection.classList.remove("hidden");
+
+    let startIndex = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i] || [];
+        const normalizedRow = row.map(normalizeText);
+
+        if (
+            normalizedRow.includes("IDP") &&
+            normalizedRow.includes("CIDADE") &&
+            normalizedRow.includes("ESTADO")
+        ) {
+            startIndex = i;
+            break;
+        }
+    }
+
+    const previewRows = rows.slice(startIndex, startIndex + 30);
+
+    if (!previewRows.length) {
+        previewTableWrapper.innerHTML = `<div class="preview-empty">Nenhuma linha disponível para pré-visualização.</div>`;
+        if (previewMeta) previewMeta.classList.add("hidden");
+        return;
+    }
+
+    const headerRow = previewRows[0] || [];
+    const bodyRows = previewRows.slice(1);
+
+    let maxCols = 0;
+    for (const row of previewRows) {
+        if (Array.isArray(row) && row.length > maxCols) maxCols = row.length;
+    }
+
+    if (previewMeta) {
+        previewMeta.classList.remove("hidden");
+        previewMeta.innerHTML = `
+            <strong>Cabeçalho detectado na linha:</strong> ${startIndex + 1}
+            &nbsp;•&nbsp;
+            <strong>Linhas exibidas:</strong> ${previewRows.length}
+            &nbsp;•&nbsp;
+            <strong>Colunas visíveis:</strong> ${maxCols}
+        `;
+    }
+
+    let html = `
+        <div class="preview-table-wrap">
+            <table class="preview-table">
+                <thead>
+                    <tr>
+                        <th class="preview-col-index">#</th>
+    `;
+
+    for (let colIndex = 0; colIndex < maxCols; colIndex++) {
+        html += `<th>${escapeHtml(String(headerRow[colIndex] ?? ""))}</th>`;
+    }
+
+    html += `
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    bodyRows.forEach((row, rowIndex) => {
+        html += `<tr>`;
+        html += `<td class="preview-col-index">${startIndex + 2 + rowIndex}</td>`;
+
+        for (let colIndex = 0; colIndex < maxCols; colIndex++) {
+            html += `<td>${escapeHtml(String(row?.[colIndex] ?? ""))}</td>`;
+        }
+
+        html += `</tr>`;
+    });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    previewTableWrapper.innerHTML = html;
+}
+
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
 /* =========================
    UTILITÁRIOS
 ========================= */
@@ -187,6 +290,25 @@ function isRowEmpty(row = []) {
     return row.every((cell) => String(cell ?? "").trim() === "");
 }
 
+async function removeFullyEmptyRows(rows = []) {
+    const cleanedRows = [];
+    let removedCount = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+        const row = Array.isArray(rows[i]) ? rows[i] : [];
+
+        if (isRowEmpty(row)) {
+            removedCount += 1;
+        } else {
+            cleanedRows.push(row);
+        }
+
+        await maybeYield(i);
+    }
+
+    return { cleanedRows, removedCount };
+}
+
 function excelDateToJSDate(serial) {
     if (typeof serial !== "number") return null;
     const utcDays = Math.floor(serial - 25569);
@@ -205,6 +327,11 @@ function formatDateToDDMMYYYY(date) {
 function normalizeDateString(value) {
     const raw = String(value ?? "").trim();
     if (!raw) return "";
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+        const converted = formatDateToDDMMYYYY(excelDateToJSDate(value));
+        if (converted) return converted;
+    }
 
     const direct = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     if (direct) return raw;
@@ -262,30 +389,15 @@ function parseCSV(text) {
     return parsed.data || [];
 }
 
-function findMainSheetName(workbook) {
-    const names = workbook.SheetNames || [];
-    if (!names.length) return null;
-
-    const telefones = names.find(
-        (name) => normalizeText(name) === "TELEFONES"
-    );
-    if (telefones) return telefones;
-
-    const firstNotContagem = names.find(
-        (name) => normalizeText(name) !== "CONTAGEM"
-    );
-
-    return firstNotContagem || names[0];
-}
-
-function getSheetRows(workbook, sheetName) {
-    const sheet = workbook.Sheets[sheetName];
-    return XLSX.utils.sheet_to_json(sheet, {
-        header: 1,
-        defval: "",
-        raw: true,
-        blankrows: false,
+function parseCSVToRows(text) {
+    const parsed = Papa.parse(text, {
+        header: false,
+        skipEmptyLines: false,
+        delimiter: "",
+        dynamicTyping: false,
     });
+
+    return parsed.data || [];
 }
 
 function findHeaderIndex(headers, candidates) {
@@ -377,12 +489,6 @@ function getPesqSortOrder(pesqValue) {
     return Number.MAX_SAFE_INTEGER - 2;
 }
 
-function autoFitSheetColumnsByHeaders(headers) {
-    return headers.map((header) => ({
-        wch: Math.max(12, Math.min(String(header ?? "").length + 4, 30))
-    }));
-}
-
 function handleDownload() {
     if (!generatedBlob || !generatedFileName) {
         addLog("Nenhum arquivo final foi gerado ainda.", "warn");
@@ -460,6 +566,22 @@ function splitCotaRowsByDate(cotaRows) {
     });
 
     return groups;
+}
+
+function findHeaderRowIndex(rows, maxScan = 20) {
+    for (let i = 0; i < Math.min(rows.length, maxScan); i++) {
+        const row = rows[i] || [];
+        const normalized = row.map(normalizeText);
+
+        const hasIDP = normalized.includes("IDP");
+        const hasCidade = normalized.includes("CIDADE");
+        const hasEstado = normalized.includes("ESTADO");
+
+        if (hasIDP && hasCidade && hasEstado) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 /* =========================
@@ -795,7 +917,7 @@ async function buildSharedPoolsForCota(usefulRefs, cotaRowsByDate) {
 }
 
 /* =========================
-   SAÍDA FINAL OTIMIZADA
+   SAÍDA FINAL
 ========================= */
 
 async function buildFinalRowRefs(rows, dataStartIndex, columnIndexes, diaPesqColIndex) {
@@ -860,45 +982,47 @@ function buildFinalOutputRow(rawRow, columnIndexes, diaPesqColIndex) {
     ];
 }
 
-async function writeFinalWorkbookInChunks({
+function escapeCSVValue(value) {
+    const str = String(value ?? "");
+    if (/[;"\n\r,]/.test(str)) {
+        return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+}
+
+async function buildFinalCSVInChunks({
     rows,
     sortedRefs,
     finalHeaders,
     columnIndexes,
     diaPesqColIndex
 }) {
-    const wb = XLSX.utils.book_new();
+    const parts = [];
 
-    const ws = XLSX.utils.aoa_to_sheet([finalHeaders]);
-    ws["!cols"] = autoFitSheetColumnsByHeaders(finalHeaders);
-
-    let excelRowPointer = 1;
+    parts.push(
+        "\uFEFF" + finalHeaders.map(escapeCSVValue).join(";") + "\r\n"
+    );
 
     for (let start = 0; start < sortedRefs.length; start += EXPORT_CHUNK_SIZE) {
         const end = Math.min(start + EXPORT_CHUNK_SIZE, sortedRefs.length);
-        const chunkRows = [];
+        let chunkText = "";
 
         for (let i = start; i < end; i++) {
             const ref = sortedRefs[i];
-            chunkRows.push(
-                buildFinalOutputRow(rows[ref.rowIndex] || [], columnIndexes, diaPesqColIndex)
+            const outputRow = buildFinalOutputRow(
+                rows[ref.rowIndex] || [],
+                columnIndexes,
+                diaPesqColIndex
             );
+
+            chunkText += outputRow.map(escapeCSVValue).join(";") + "\r\n";
         }
 
-        XLSX.utils.sheet_add_aoa(ws, chunkRows, { origin: { r: excelRowPointer, c: 0 } });
-        excelRowPointer += chunkRows.length;
-
+        parts.push(chunkText);
         await sleepFrame();
     }
 
-    XLSX.utils.book_append_sheet(wb, ws, "RESULTADO");
-    return wb;
-}
-
-function buildPreviewRows(rows, sortedRefs, columnIndexes, diaPesqColIndex, limit = PREVIEW_LIMIT) {
-    return sortedRefs
-        .slice(0, limit)
-        .map((ref) => buildFinalOutputRow(rows[ref.rowIndex] || [], columnIndexes, diaPesqColIndex));
+    return parts.join("");
 }
 
 /* =========================
@@ -908,9 +1032,8 @@ function buildPreviewRows(rows, sortedRefs, columnIndexes, diaPesqColIndex, limi
 async function handleProcess() {
     try {
         clearLog();
-        if (resultSection) resultSection.classList.add("hidden");
-        if (previewHead) previewHead.innerHTML = "";
-        if (previewBody) previewBody.innerHTML = "";
+        clearPreview();
+
         if (downloadBtn) downloadBtn.classList.add("hidden");
         generatedBlob = null;
         generatedFileName = "";
@@ -919,7 +1042,13 @@ async function handleProcess() {
         const hasCota = hasCotaSelect?.value === "sim";
 
         if (!baseFile) {
-            addLog("Selecione o arquivo base (.xlsx).", "error");
+            addLog("Selecione o arquivo base em CSV.", "error");
+            return;
+        }
+
+        if (!String(baseFile.name || "").toLowerCase().endsWith(".csv")) {
+            addLog("O arquivo base agora aceita somente CSV.", "error");
+            addLog('Abra sua planilha e salve a aba principal como "CSV UTF-8".', "warn");
             return;
         }
 
@@ -939,30 +1068,44 @@ async function handleProcess() {
         processBtn.disabled = true;
         processBtn.textContent = "Processando...";
 
-        addLog("Lendo arquivo Excel...", "ok");
+        let rows = [];
+        let sourceLabel = "";
+
+        addLog("Lendo base CSV...", "ok");
         const baseBuffer = await getArrayBuffer(baseFile);
+        const baseText = decodeCsvArrayBuffer(baseBuffer);
+        rows = parseCSVToRows(baseText);
+        sourceLabel = "CSV";
 
-        const workbook = XLSX.read(baseBuffer, {
-            type: "array",
-            cellDates: false,
-            dense: true,
-        });
+        addLog(`Fonte carregada: CSV | ${sourceLabel}`, "ok");
+        addLog(`Total bruto de linhas lidas: ${rows.length}`, "ok");
 
-        const mainSheetName = findMainSheetName(workbook);
-        if (!mainSheetName) {
-            addLog("Não foi possível localizar a aba principal.", "error");
+        const emptyRowCleanup = await removeFullyEmptyRows(rows);
+        rows = emptyRowCleanup.cleanedRows;
+
+        addLog(
+            `Linhas totalmente vazias removidas: ${emptyRowCleanup.removedCount}`,
+            emptyRowCleanup.removedCount > 0 ? "ok" : "warn"
+        );
+        addLog(`Total de linhas restantes após limpeza: ${rows.length}`, "ok");
+
+        renderPreviewTable(rows);
+
+        if (!rows.length) {
+            addLog("Não consegui materializar as linhas da base CSV.", "error");
             return;
         }
 
-        const rows = getSheetRows(workbook, mainSheetName);
-        if (!rows.length || rows.length < 3) {
-            addLog("A aba principal está vazia ou incompleta.", "error");
+        const headerRowIndex = findHeaderRowIndex(rows);
+
+        if (headerRowIndex === -1) {
+            addLog("Não consegui localizar a linha de cabeçalho na base CSV.", "error");
+            console.log("Prévia sem cabeçalho detectado:", rows.slice(0, 30));
             return;
         }
 
-        addLog(`Aba principal encontrada: ${mainSheetName}`, "ok");
+        addLog(`Linha de cabeçalho detectada: ${headerRowIndex + 1}`, "ok");
 
-        const headerRowIndex = 1;
         const headerRow = rows[headerRowIndex] || [];
         const dataStartIndex = headerRowIndex + 1;
 
@@ -974,9 +1117,10 @@ async function handleProcess() {
             "SETOR DENTRO DA CIDADE",
             "SETOR",
             "SETOR CIDADE",
-            "SETOR_CIDADE"
+            "SETOR_CIDADE",
+            "SETO"
         ]);
-        const categoriaCol = findHeaderIndex(headerRow, ["CATEGORIA"]);
+        const categoriaCol = findHeaderIndex(headerRow, ["CATEGORIA", "CATE"]);
         const tf1Col = findHeaderIndex(headerRow, ["TF1"]);
         const tf2Col = findHeaderIndex(headerRow, ["TF2"]);
         const pesqCol = findHeaderIndex(headerRow, [
@@ -1017,7 +1161,7 @@ async function handleProcess() {
         });
 
         if (!usefulRefs.length) {
-            addLog("Não há linhas úteis na aba principal.", "error");
+            addLog("Não há linhas úteis na base principal.", "error");
             return;
         }
 
@@ -1044,7 +1188,18 @@ async function handleProcess() {
         const sobraCount = markUnusedRowsAsSobra(usefulRefs, rows, pesqCol, dataPesquisaCol);
         addLog(`Linhas marcadas como SOBRA: ${sobraCount}`, sobraCount > 0 ? "ok" : "warn");
 
-        const finalHeaders = ["IDP", "CIDADE", "ESTADO", "REGIÃO", "SETOR", "CATEGORIA", "TF1", "TF2", "N° PESQ", "DIA PESQ"];
+        const finalHeaders = [
+            "IDP",
+            "CIDADE",
+            "ESTADO",
+            "REGIÃO",
+            "SETOR",
+            "CATEGORIA",
+            "TF1",
+            "TF2",
+            "N° PESQ",
+            "DIA PESQ"
+        ];
 
         addLog("Montando referências finais para exportação...", "ok");
 
@@ -1072,19 +1227,10 @@ async function handleProcess() {
             return;
         }
 
-        const previewRows = buildPreviewRows(
-            rows,
-            finalRowRefs,
-            columnIndexes,
-            dataPesquisaCol,
-            PREVIEW_LIMIT
-        );
-
-        renderPreview(finalHeaders, previewRows);
         addLog(`Linhas exportadas no arquivo final: ${finalRowRefs.length}`, "ok");
-        addLog("Gerando planilha final em blocos para economizar memória...", "ok");
+        addLog("Gerando arquivo CSV final em blocos para economizar memória...", "ok");
 
-        const finalWorkbook = await writeFinalWorkbookInChunks({
+        const csvText = await buildFinalCSVInChunks({
             rows,
             sortedRefs: finalRowRefs,
             finalHeaders,
@@ -1092,16 +1238,9 @@ async function handleProcess() {
             diaPesqColIndex: dataPesquisaCol
         });
 
-        addLog("Escrevendo o arquivo XLSX final...", "ok");
-
-        const wbout = XLSX.write(finalWorkbook, {
-            bookType: "xlsx",
-            type: "array",
-        });
-
-        generatedFileName = `${safeFileName(baseFile.name)}_PREENCHIDO.xlsx`;
-        generatedBlob = new Blob([wbout], {
-            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        generatedFileName = `${safeFileName(baseFile.name)}_PREENCHIDO.csv`;
+        generatedBlob = new Blob([csvText], {
+            type: "text/csv;charset=utf-8;",
         });
 
         if (downloadBtn) downloadBtn.classList.remove("hidden");
@@ -1200,6 +1339,10 @@ async function processWithCota({
     addLog("Modo selecionado: COM COTA", "ok");
 
     const cotaFile = cotaFileInput?.files?.[0];
+    if (!String(cotaFile?.name || "").toLowerCase().endsWith(".csv")) {
+        throw new Error("O arquivo COTA deve estar em CSV.");
+    }
+
     const cotaBuffer = await getArrayBuffer(cotaFile);
     const cotaText = decodeCsvArrayBuffer(cotaBuffer);
     const cotaRows = parseCSV(cotaText);
@@ -1311,31 +1454,4 @@ async function processWithCota({
 
     addLog(`Total preenchido em N° PESQ: ${totalAtribuido}`, "ok");
     addLog(`Distribuição por categoria em rodízio por grupo: ${CATEGORY_PRIORITY.join(" → ")}`, "ok");
-}
-
-function renderPreview(headers, dataRows, limit = PREVIEW_LIMIT) {
-    if (!previewHead || !previewBody || !resultSection) return;
-
-    previewHead.innerHTML = "";
-    previewBody.innerHTML = "";
-
-    const trHead = document.createElement("tr");
-    headers.forEach((header) => {
-        const th = document.createElement("th");
-        th.textContent = header ?? "";
-        trHead.appendChild(th);
-    });
-    previewHead.appendChild(trHead);
-
-    dataRows.slice(0, limit).forEach((row) => {
-        const tr = document.createElement("tr");
-        row.forEach((cell) => {
-            const td = document.createElement("td");
-            td.textContent = cell ?? "";
-            tr.appendChild(td);
-        });
-        previewBody.appendChild(tr);
-    });
-
-    resultSection.classList.remove("hidden");
 }
