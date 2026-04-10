@@ -170,12 +170,12 @@ async function obterCsvOperacional(arquivoKey, forceReload = false) {
     return cacheCsvOperacional.get(key);
   }
 
-  // 🔥 UMA ÚNICA REQUISIÇÃO
   const { data, error } = await supabase
     .from(TABELA_ROWS)
     .select("linha_idx, line, idp, estado, cidade, regiao_cidade, tf1, tf2, status, observacao, dt_alteracao, pesquisador, arquivo_key")
     .eq("arquivo_key", key)
-    .order("linha_idx", { ascending: true });
+    .order("linha_idx", { ascending: true })
+    .range(0, 999999);
 
   if (error) throw error;
 
@@ -312,7 +312,6 @@ function iniciarRealtime() {
         const row = payload?.new || {};
         if (!row?.arquivo_key) return;
 
-        // evita recarregar à toa quando só mudou campo irrelevante
         const arquivoLocal = arquivosAtuais.find(
           (x) => String(x.arquivoKey) === String(row.arquivo_key)
         );
@@ -900,11 +899,15 @@ function montarTextoResumoSelecionados(base, selecionadosSet) {
 async function salvarFiltroPesquisadoresNoBanco(arquivoKey) {
   if (!arquivoKey || !relatorioAtualBase) return false;
 
+  const keyTrimmed = String(arquivoKey || "").trim();
+
   const arq = arquivosAtuais.find(
-    (x) => String(x.arquivoKey || "").trim() === String(arquivoKey || "").trim()
+    (x) => String(x.arquivoKey || "").trim() === keyTrimmed
   );
 
   if (!arq) return false;
+
+  const ownerTrimmed = String(arq.ownerId || ownerId || "").trim();
 
   const todos = (relatorioAtualBase.tabelaPesquisadores || [])
     .map((item) => String(item.parte || "").trim())
@@ -924,7 +927,7 @@ async function salvarFiltroPesquisadoresNoBanco(arquivoKey) {
   if (salvandoFiltroPromise) {
     try {
       await salvandoFiltroPromise;
-    } catch (_) { }
+    } catch (_) {}
   }
 
   salvandoFiltroPromise = (async () => {
@@ -940,7 +943,6 @@ async function salvarFiltroPesquisadoresNoBanco(arquivoKey) {
         payload
       });
 
-      // 1) Verifica se a linha existe com arquivo_key + owner_id
       let rowCheck = null;
       let checkError = null;
 
@@ -956,7 +958,6 @@ async function salvarFiltroPesquisadoresNoBanco(arquivoKey) {
         checkError = resCheckOwner.error;
       }
 
-      // 2) Se não achou com owner_id, tenta só por arquivo_key
       if (!rowCheck) {
         const resCheckKey = await supabase
           .from(TABELA)
@@ -983,7 +984,6 @@ async function salvarFiltroPesquisadoresNoBanco(arquivoKey) {
 
       console.log("Linha encontrada para update", rowCheck);
 
-      // 3) Tenta update com arquivo_key + owner_id
       let updateRes = null;
 
       if (ownerTrimmed) {
@@ -999,7 +999,6 @@ async function salvarFiltroPesquisadoresNoBanco(arquivoKey) {
         console.error("Erro no update com owner_id", updateRes.error);
       }
 
-      // 4) Se não atualizou nada, tenta só com arquivo_key
       if (!updateRes || updateRes.error || !Array.isArray(updateRes.data) || updateRes.data.length === 0) {
         console.warn("Update com owner_id não alterou linha; tentando apenas arquivo_key", {
           arquivoKey: keyTrimmed,
@@ -1024,7 +1023,6 @@ async function salvarFiltroPesquisadoresNoBanco(arquivoKey) {
           ownerId: ownerTrimmed
         });
 
-        // checagem final para confirmar se salvou mesmo assim
         const confirmRes = await supabase
           .from(TABELA)
           .select("arquivo_key, owner_id, pesquisadores_desmarcados, ultima_alteracao_em")
