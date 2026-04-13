@@ -9,6 +9,7 @@ const baseFileInput = document.querySelector("#baseFile");
 const cotaFileInput = document.querySelector("#cotaFile");
 const hasCotaSelect = document.querySelector("#hasCota");
 const maxNumbersPerPesqInput = document.querySelector("#maxNumbersPerPesq");
+const maxPesquisaPerPesqInput = document.querySelector("#maxPesquisaPerPesq");
 const processBtn = document.querySelector("#processBtn");
 const downloadBtn = document.querySelector("#downloadBtn");
 
@@ -443,6 +444,16 @@ function getMaxNumbersPerPesq() {
     return value;
 }
 
+function getMaxPesquisaPerPesq() {
+    const value = Number(maxPesquisaPerPesqInput?.value);
+
+    if (!Number.isFinite(value) || value < 0) {
+        return 0;
+    }
+
+    return Math.floor(value);
+}
+
 function getManualDayConfigs() {
     if (!manualDaysList) return [];
 
@@ -710,13 +721,24 @@ async function buildOrderedCategoryGroups(rowRefs) {
     return orderedGroups;
 }
 
-async function distributeRowsByCategoryRoundRobin(rowPool, targets) {
+async function distributeRowsByCategoryRoundRobin(rowPool, targets, options = {}) {
+    const maxPesquisaPerPesq =
+        Number.isInteger(options.maxPesquisaPerPesq) && options.maxPesquisaPerPesq > 0
+            ? options.maxPesquisaPerPesq
+            : 0;
+
     const categoryGroups = await buildOrderedCategoryGroups(rowPool);
     let totalAssigned = 0;
+
+    for (let t = 0; t < targets.length; t++) {
+        if (!Array.isArray(targets[t].rows)) targets[t].rows = [];
+        if (!Number.isFinite(targets[t].pesquisaAssigned)) targets[t].pesquisaAssigned = 0;
+    }
 
     for (let groupIndex = 0; groupIndex < categoryGroups.length; groupIndex++) {
         const group = categoryGroups[groupIndex];
         let cursor = 0;
+        const isPesquisaCategory = normalizeCategory(group.category) === "PESQUISA";
 
         while (cursor < group.rows.length) {
             const targetsNeedingRows = [];
@@ -757,6 +779,14 @@ async function distributeRowsByCategoryRoundRobin(rowPool, targets) {
                 if (cursor >= group.rows.length) break;
                 if (target.remaining <= 0) continue;
 
+                if (
+                    isPesquisaCategory &&
+                    maxPesquisaPerPesq > 0 &&
+                    target.pesquisaAssigned >= maxPesquisaPerPesq
+                ) {
+                    continue;
+                }
+
                 const rowRef = group.rows[cursor];
                 cursor += 1;
 
@@ -764,9 +794,15 @@ async function distributeRowsByCategoryRoundRobin(rowPool, targets) {
                 target.remaining -= 1;
                 totalAssigned += 1;
                 assignedInThisRound = true;
+
+                if (isPesquisaCategory) {
+                    target.pesquisaAssigned += 1;
+                }
             }
 
-            if (!assignedInThisRound) break;
+            if (!assignedInThisRound) {
+                break;
+            }
 
             if (cursor % UI_YIELD_EVERY === 0) {
                 await sleepFrame();

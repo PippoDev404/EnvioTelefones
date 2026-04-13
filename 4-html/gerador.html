@@ -49,6 +49,20 @@
                     <label for="maxNumbersPerPesq">Máximo de telefones por P (sem cota)</label>
                     <input id="maxNumbersPerPesq" type="number" min="1" step="1" placeholder="Ex.: 1200" />
                 </div>
+
+                <div class="field">
+                    <label for="pesquisaNumbersPerPesq">Máximo de telefones da PESQUISA por P</label>
+                    <input
+                        id="pesquisaNumbersPerPesq"
+                        type="number"
+                        min="0"
+                        step="1"
+                        placeholder="Ex.: 200"
+                    />
+                    <small class="field-help">
+                        Se deixar vazio ou 0, o sistema distribui normalmente todos os números da categoria PESQUISA.
+                    </small>
+                </div>
             </div>
 
             <div id="manualDaysSection" class="manual-days hidden">
