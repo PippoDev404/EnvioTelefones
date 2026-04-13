@@ -32,18 +32,59 @@ const SOBRA_LABEL = "SOBRA";
 const EXPORT_CHUNK_SIZE = 20000;
 const UI_YIELD_EVERY = 5000;
 
+let cotaMultiplierLimitInput = null;
+
 hasCotaSelect?.addEventListener("change", syncModeUI);
 addDayBtn?.addEventListener("click", () => createManualDayCard());
 processBtn?.addEventListener("click", handleProcess);
 downloadBtn?.addEventListener("click", handleDownload);
 
+ensureCotaMultiplierField();
 syncModeUI();
 
 /* =========================
    UI
 ========================= */
 
+function ensureCotaMultiplierField() {
+    cotaMultiplierLimitInput = document.querySelector("#cotaMultiplierLimit");
+    if (cotaMultiplierLimitInput) return;
+
+    const targetContainer =
+        document.querySelector(".cota-only")?.parentElement ||
+        cotaFileInput?.closest(".field")?.parentElement ||
+        cotaFileInput?.closest(".field") ||
+        hasCotaSelect?.closest(".field")?.parentElement ||
+        hasCotaSelect?.closest(".field");
+
+    if (!targetContainer) return;
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "field cota-only";
+    wrapper.id = "cotaMultiplierLimitWrapper";
+
+    wrapper.innerHTML = `
+        <label for="cotaMultiplierLimit">Limite do multiplicador (opcional)</label>
+        <input
+            type="number"
+            id="cotaMultiplierLimit"
+            min="1"
+            step="1"
+            placeholder="Ex.: 60"
+        />
+        <small class="field-help">
+            Se preencher, esse número vira o teto do multiplicador proporcional no modo com cota.
+            Se deixar em branco, o sistema usa todas as linhas possíveis.
+        </small>
+    `;
+
+    targetContainer.appendChild(wrapper);
+    cotaMultiplierLimitInput = wrapper.querySelector("#cotaMultiplierLimit");
+}
+
 function syncModeUI() {
+    ensureCotaMultiplierField();
+
     const hasCota = hasCotaSelect?.value === "sim";
 
     document.querySelectorAll(".cota-only").forEach((el) => {
@@ -452,6 +493,24 @@ function getMaxPesquisaPerPesq() {
     }
 
     return Math.floor(value);
+}
+
+function getCotaMultiplierLimit() {
+    ensureCotaMultiplierField();
+
+    const raw = String(cotaMultiplierLimitInput?.value ?? "").trim();
+
+    if (!raw) {
+        return null;
+    }
+
+    const value = Number(raw);
+
+    if (!Number.isInteger(value) || value <= 0) {
+        throw new Error("O limite do multiplicador proporcional da cota deve ser um número inteiro maior que zero.");
+    }
+
+    return value;
 }
 
 function getManualDayConfigs() {
@@ -1010,7 +1069,7 @@ function buildFinalOutputRow(rawRow, columnIndexes, diaPesqColIndex) {
         rawRow[columnIndexes.estado] ?? "",
         rawRow[columnIndexes.regiao] ?? "",
         rawRow[columnIndexes.setor] ?? "",
-        rawRow[columnIndexes.sexo] ?? "", // <-- NOVO
+        rawRow[columnIndexes.sexo] ?? "",
         rawRow[columnIndexes.categoria] ?? "",
         rawRow[columnIndexes.tf1] ?? "",
         rawRow[columnIndexes.tf2] ?? "",
@@ -1233,7 +1292,7 @@ async function handleProcess() {
             "ESTADO",
             "REGIÃO",
             "SETOR",
-            "SEXO", // <-- NOVO
+            "SEXO",
             "CATEGORIA",
             "TF1",
             "TF2",
@@ -1249,7 +1308,7 @@ async function handleProcess() {
             estado: estadoCol,
             regiao: regiaoCol,
             setor: setorCol,
-            sexo: sexoCol, // <-- NOVO
+            sexo: sexoCol,
             categoria: categoriaCol,
             tf1: tf1Col,
             tf2: tf2Col,
@@ -1379,6 +1438,14 @@ async function processWithCota({
 }) {
     addLog("Modo selecionado: COM COTA", "ok");
 
+    const cotaMultiplierLimit = getCotaMultiplierLimit();
+
+    if (cotaMultiplierLimit === null) {
+        addLog("Multiplicador proporcional da cota: sem limite manual, usando todas as linhas possíveis por grupo/data.", "ok");
+    } else {
+        addLog(`Multiplicador proporcional da cota: limite manual definido em ${cotaMultiplierLimit}.`, "ok");
+    }
+
     const cotaFile = cotaFileInput?.files?.[0];
     if (!String(cotaFile?.name || "").toLowerCase().endsWith(".csv")) {
         throw new Error("O arquivo COTA deve estar em CSV.");
@@ -1442,14 +1509,18 @@ async function processWithCota({
             const poolForDate = shared?.perDatePools?.get(date) || [];
             const available = poolForDate.length;
 
-            const multiplier = bucketInfo.totalQuestionarios > 0
-                ? Math.min(60, Math.floor(available / bucketInfo.totalQuestionarios))
+            const proportionalMultiplier = bucketInfo.totalQuestionarios > 0
+                ? Math.floor(available / bucketInfo.totalQuestionarios)
                 : 0;
+
+            const multiplier = cotaMultiplierLimit === null
+                ? proportionalMultiplier
+                : Math.min(cotaMultiplierLimit, proportionalMultiplier);
 
             multiplierByBucket.set(bucketKey, multiplier);
 
             addLog(
-                `Data ${date} | ${bucketInfo.mode === "estado" ? "Estado" : "Setor"} ${bucketInfo.key}: ${available} telefones disponíveis para esta data, ${bucketInfo.totalQuestionarios} questionários, multiplicador final ${multiplier}.`,
+                `Data ${date} | ${bucketInfo.mode === "estado" ? "Estado" : "Setor"} ${bucketInfo.key}: ${available} telefones disponíveis para esta data, ${bucketInfo.totalQuestionarios} questionários, multiplicador proporcional calculado ${proportionalMultiplier}, multiplicador final ${multiplier}.`,
                 multiplier > 0 ? "ok" : "warn"
             );
 
