@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Auditoria de Entrevistas IA</title>
+    <script defer src="/config.js"></script>
+    <link rel="icon" type="image/png" sizes="32x32" href="/0-imgs/IconIBESPE.jpg">
+
+    <link rel="stylesheet" href="/3-css/audioTransc.css" />
+    <link rel="stylesheet" href="/1-componentes/global.css">
+    <script defer type="module" src="/2-header-footer/header-footer.js"></script>
+    <script defer src="/5-js/db.js"></script>
+    <script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
+    <script defer type="module" src="/5-js/audioTransc.js"></script>
+</head>
+
+<body>
+    <div id="header"></div>
+
+    <main class="PaginaAuditoria">
+        <section class="CardAuditoria">
+            <div class="TopoAuditoria">
+                <div>
+                    <p class="Eyebrow">IBESPE • Auditoria Inteligente</p>
+                    <h1>Envie os áudios e o questionário</h1>
+                    <p class="Subtitulo">
+                        O sistema envia os arquivos para o n8n, faz a transcrição, compara com o questionário e devolve
+                        a análise separada por entrevista.
+                    </p>
+                </div>
+            </div>
+
+            <form id="formAuditoria" class="FormularioAuditoria">
+                <div class="GridCampos">
+                    <div class="CampoArquivo">
+                        <label for="audio">Arquivos de áudio</label>
+                        <input
+                            type="file"
+                            id="audio"
+                            name="audio"
+                            accept=".mp3,.wav,.m4a,.mpeg,.mp4,.webm"
+                            multiple
+                            required
+                        />
+                        <small>Você pode enviar até 5 áudios por vez.</small>
+                    </div>
+
+                    <div class="CampoArquivo">
+                        <label for="questionario">Questionário (.docx)</label>
+                        <input
+                            type="file"
+                            id="questionario"
+                            name="questionario"
+                            accept=".docx"
+                            required
+                        />
+                        <small>O questionário deve ser enviado em formato .docx.</small>
+                    </div>
+                </div>
+
+                <div class="AcoesFormulario">
+                    <button class="BotaoPrimario" id="btnEnviar" type="submit">
+                        Analisar arquivos
+                    </button>
+                </div>
+            </form>
+
+            <div id="statusBox" class="StatusBox status-neutro">
+                Aguardando envio dos arquivos.
+            </div>
+
+            <section class="ResultadoWrapperSingle">
+                <div class="ResultadoColuna">
+                    <h2>Entrevistas analisadas</h2>
+                    <div id="resultadoContainer" class="ListaResultados">
+                        <div class="BlocoEntrevistaPlaceholder">
+                            As entrevistas analisadas aparecerão aqui em blocos separados.
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </section>
+    </main>
+
+    <div id="footer"></div>
+</body>
+
+</html>
