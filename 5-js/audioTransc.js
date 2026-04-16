@@ -10,7 +10,7 @@ const statusBox = document.getElementById("statusBox");
 const resultadoContainer = document.getElementById("resultadoContainer");
 const toggleTheme = document.getElementById("toggleTheme");
 
-const N8N_WEBHOOK_URL = "https://n8n.srv962474.hstgr.cloud/webhook-test/chat";
+const N8N_WEBHOOK_URL = "https://n8n.srv962474.hstgr.cloud/webhook/chat";
 const LIMITE_AUDIOS = 5;
 
 function setStatus(tipo, mensagem) {
