@@ -96,26 +96,16 @@ function renderizarResultados(resultados) {
 }
 
 function normalizarResultados(data) {
-  if (Array.isArray(data?.resultados)) {
-    return data.resultados;
-  }
-
-  if (Array.isArray(data?.data?.resultados)) {
-    return data.data.resultados;
-  }
-
-  if (Array.isArray(data)) {
-    return data;
-  }
+  if (Array.isArray(data?.resultados)) return data.resultados;
+  if (Array.isArray(data?.data?.resultados)) return data.data.resultados;
+  if (Array.isArray(data)) return data;
 
   if (data?.resposta || data?.transcricao) {
-    return [
-      {
-        nomeEntrevista: data.nomeEntrevista || data.audioName || "Entrevista",
-        resposta: data.resposta,
-        transcricao: data.transcricao
-      }
-    ];
+    return [{
+      nomeEntrevista: data.nomeEntrevista || data.audioName || "Entrevista",
+      resposta: data.resposta,
+      transcricao: data.transcricao
+    }];
   }
 
   return [];
@@ -140,12 +130,80 @@ async function extrairTextoQuestionario(file) {
   const arrayBuffer = await file.arrayBuffer();
   const result = await window.mammoth.extractRawText({ arrayBuffer });
 
-  if (result.messages?.length) {
-    console.log("Avisos do Mammoth:", result.messages);
-  }
-
   return result.value;
 }
+
+/* ============================= */
+/* NORMALIZAÇÃO DE ÁUDIO (NOVO) */
+/* ============================= */
+
+async function converterParaWav16kMono(file) {
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const arrayBuffer = await file.arrayBuffer();
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+  const offlineCtx = new OfflineAudioContext(1, audioBuffer.duration * 16000, 16000);
+  const source = offlineCtx.createBufferSource();
+
+  const monoBuffer = offlineCtx.createBuffer(1, audioBuffer.length, audioBuffer.sampleRate);
+
+  for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
+    const channelData = audioBuffer.getChannelData(i);
+    const monoData = monoBuffer.getChannelData(0);
+    for (let j = 0; j < channelData.length; j++) {
+      monoData[j] += channelData[j] / audioBuffer.numberOfChannels;
+    }
+  }
+
+  source.buffer = monoBuffer;
+  source.connect(offlineCtx.destination);
+  source.start();
+
+  const renderedBuffer = await offlineCtx.startRendering();
+
+  return bufferToWave(renderedBuffer, 16000);
+}
+
+function bufferToWave(abuffer, sampleRate) {
+  const numOfChan = abuffer.numberOfChannels;
+  const length = abuffer.length * numOfChan * 2 + 44;
+  const buffer = new ArrayBuffer(length);
+  const view = new DataView(buffer);
+
+  let offset = 0;
+
+  function writeString(str) {
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset++, str.charCodeAt(i));
+    }
+  }
+
+  writeString("RIFF");
+  view.setUint32(offset, 36 + abuffer.length * 2, true); offset += 4;
+  writeString("WAVE");
+  writeString("fmt ");
+  view.setUint32(offset, 16, true); offset += 4;
+  view.setUint16(offset, 1, true); offset += 2;
+  view.setUint16(offset, 1, true); offset += 2;
+  view.setUint32(offset, sampleRate, true); offset += 4;
+  view.setUint32(offset, sampleRate * 2, true); offset += 4;
+  view.setUint16(offset, 2, true); offset += 2;
+  view.setUint16(offset, 16, true); offset += 2;
+  writeString("data");
+  view.setUint32(offset, abuffer.length * 2, true); offset += 4;
+
+  const channelData = abuffer.getChannelData(0);
+  let index = 0;
+
+  for (let i = 0; i < channelData.length; i++, offset += 2) {
+    let sample = Math.max(-1, Math.min(1, channelData[i]));
+    view.setInt16(offset, sample * 0x7fff, true);
+  }
+
+  return new Blob([view], { type: "audio/wav" });
+}
+
+/* ============================= */
 
 form?.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -154,78 +212,57 @@ form?.addEventListener("submit", async (event) => {
   const questionario = document.getElementById("questionario")?.files?.[0];
 
   if (!audios.length || !questionario) {
-    setStatus("error", "Selecione os áudios e o questionário antes de continuar.");
+    setStatus("error", "Selecione os áudios e o questionário.");
     return;
   }
 
   if (audios.length > LIMITE_AUDIOS) {
-    setStatus("error", `Você pode enviar no máximo ${LIMITE_AUDIOS} áudios por vez.`);
+    setStatus("error", `Máximo de ${LIMITE_AUDIOS} áudios.`);
     return;
   }
-
-  limparResultados();
 
   try {
     setStatus("loading", "Lendo questionário...");
     const questionarioTexto = await extrairTextoQuestionario(questionario);
 
-    if (!questionarioTexto || !questionarioTexto.trim()) {
-      throw new Error("Não foi possível extrair texto do questionário.");
-    }
+    setStatus("loading", "Normalizando áudios...");
 
-    setStatus("loading", `Enviando ${audios.length} áudio(s) para análise...`);
+    const audiosConvertidos = [];
+
+    for (const audio of audios) {
+      try {
+        const wavBlob = await converterParaWav16kMono(audio);
+        const novoArquivo = new File([wavBlob], audio.name + ".wav", { type: "audio/wav" });
+        audiosConvertidos.push(novoArquivo);
+      } catch (e) {
+        console.warn("Falha ao converter:", audio.name);
+      }
+    }
 
     const formData = new FormData();
 
-    audios.forEach((audioFile) => {
+    audiosConvertidos.forEach((audioFile) => {
       formData.append("audio", audioFile);
     });
 
     formData.append("questionarioTexto", questionarioTexto);
     formData.append("questionarioNome", questionario.name);
 
+    setStatus("loading", "Enviando para análise...");
+
     const response = await fetch(N8N_WEBHOOK_URL, {
       method: "POST",
       body: formData
     });
 
-    const contentType = response.headers.get("content-type") || "";
-    let data;
-
-    if (contentType.includes("application/json")) {
-      data = await response.json();
-    } else {
-      const rawText = await response.text();
-      throw new Error(`O webhook não retornou JSON válido. Retorno: ${rawText.slice(0, 300)}`);
-    }
-
-    console.log("Resposta completa do n8n:", data);
-
-    if (!response.ok) {
-      throw new Error(data.message || data.error || "Erro ao processar a análise.");
-    }
+    const data = await response.json();
 
     const resultados = normalizarResultados(data);
 
-    if (!resultados.length) {
-      throw new Error("O webhook não retornou entrevistas no formato esperado.");
-    }
-
     renderizarResultados(resultados);
-    setStatus("success", "Análise concluída com sucesso.");
+    setStatus("success", "Análise concluída.");
   } catch (error) {
     console.error(error);
-
-    limparResultados();
-
-    if (resultadoContainer) {
-      resultadoContainer.innerHTML = `
-        <div class="BlocoEntrevistaPlaceholder">
-          Ocorreu um erro ao consultar o workflow.
-        </div>
-      `;
-    }
-
-    setStatus("error", error.message || "Erro inesperado.");
+    setStatus("error", error.message);
   }
 });
