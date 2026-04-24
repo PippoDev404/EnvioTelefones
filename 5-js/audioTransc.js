@@ -9,9 +9,14 @@ const form = document.getElementById("formAuditoria");
 const statusBox = document.getElementById("statusBox");
 const resultadoContainer = document.getElementById("resultadoContainer");
 const toggleTheme = document.getElementById("toggleTheme");
+const btnDownloadTranscricoes = document.getElementById("btnDownloadTranscricoes");
 
-const N8N_WEBHOOK_URL = "https://n8n.srv962474.hstgr.cloud/webhook/chat";
-const LIMITE_AUDIOS = 5;
+const LIMITE_AUDIOS = 10;
+
+// URL da API Python (HuggingFace Spaces em produção, localhost em desenvolvimento)
+const API_URL = "https://fmbirl-transcricao-audio.hf.space";
+
+let transcricoesAtuais = [];
 
 function setStatus(tipo, mensagem) {
   if (!statusBox) return;
@@ -36,26 +41,10 @@ function criarBlocoResultado(item, index) {
 
   const titulo = document.createElement("h3");
   titulo.className = "BlocoEntrevistaTitulo";
-  titulo.textContent = `Entrevista ${index + 1} — ${item.nomeEntrevista || item.audioName || "Sem nome"}`;
+  titulo.textContent = `Áudio ${index + 1} — ${item.nomeEntrevista || "Sem nome"}`;
 
-  const grade = document.createElement("div");
-  grade.className = "BlocoEntrevistaGrade";
-
-  const colunaResposta = document.createElement("div");
-  colunaResposta.className = "BlocoInterno";
-
-  const tituloResposta = document.createElement("h4");
-  tituloResposta.textContent = "Resposta da IA";
-
-  const conteudoResposta = document.createElement("div");
-  conteudoResposta.className = "CaixaResultado";
-  conteudoResposta.textContent = item.resposta || "Nenhuma resposta retornada.";
-
-  colunaResposta.appendChild(tituloResposta);
-  colunaResposta.appendChild(conteudoResposta);
-
-  const colunaTranscricao = document.createElement("div");
-  colunaTranscricao.className = "BlocoInterno";
+  const blocoTranscricao = document.createElement("div");
+  blocoTranscricao.className = "BlocoInterno";
 
   const tituloTranscricao = document.createElement("h4");
   tituloTranscricao.textContent = "Transcrição";
@@ -64,14 +53,11 @@ function criarBlocoResultado(item, index) {
   conteudoTranscricao.className = "CaixaResultado";
   conteudoTranscricao.textContent = item.transcricao || "Nenhuma transcrição retornada.";
 
-  colunaTranscricao.appendChild(tituloTranscricao);
-  colunaTranscricao.appendChild(conteudoTranscricao);
-
-  grade.appendChild(colunaResposta);
-  grade.appendChild(colunaTranscricao);
+  blocoTranscricao.appendChild(tituloTranscricao);
+  blocoTranscricao.appendChild(conteudoTranscricao);
 
   wrapper.appendChild(titulo);
-  wrapper.appendChild(grade);
+  wrapper.appendChild(blocoTranscricao);
 
   return wrapper;
 }
@@ -84,135 +70,95 @@ function renderizarResultados(resultados) {
   if (!Array.isArray(resultados) || resultados.length === 0) {
     resultadoContainer.innerHTML = `
       <div class="BlocoEntrevistaPlaceholder">
-        Nenhum resultado foi retornado.
+        Nenhuma transcrição foi retornada.
       </div>
     `;
+    if (btnDownloadTranscricoes) btnDownloadTranscricoes.disabled = true;
     return;
   }
 
   resultados.forEach((item, index) => {
     resultadoContainer.appendChild(criarBlocoResultado(item, index));
   });
+
+  if (btnDownloadTranscricoes) btnDownloadTranscricoes.disabled = false;
 }
 
-function normalizarResultados(data) {
-  if (Array.isArray(data?.resultados)) return data.resultados;
-  if (Array.isArray(data?.data?.resultados)) return data.data.resultados;
-  if (Array.isArray(data)) return data;
-
-  if (data?.resposta || data?.transcricao) {
-    return [{
-      nomeEntrevista: data.nomeEntrevista || data.audioName || "Entrevista",
-      resposta: data.resposta,
-      transcricao: data.transcricao
-    }];
+function baixarTodasAsTranscricoes() {
+  if (!Array.isArray(transcricoesAtuais) || transcricoesAtuais.length === 0) {
+    setStatus("error", "Não há transcrições para baixar.");
+    return;
   }
 
-  return [];
+  const conteudo = transcricoesAtuais
+    .map((item, index) => {
+      const nome = item.nomeEntrevista || `Áudio ${index + 1}`;
+      const texto = item.transcricao || "";
+      return `Áudio ${index + 1} — ${nome}\nTranscrição\n${texto}`;
+    })
+    .join("\n\n----------------------------------------\n\n");
+
+  const blob = new Blob([conteudo], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "transcricoes.txt";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  URL.revokeObjectURL(url);
 }
+
+btnDownloadTranscricoes?.addEventListener("click", baixarTodasAsTranscricoes);
 
 toggleTheme?.addEventListener("click", () => {
   document.documentElement.classList.toggle("active");
   document.body.classList.toggle("active");
 });
 
-async function extrairTextoQuestionario(file) {
-  const extensao = file.name.split(".").pop()?.toLowerCase();
-
-  if (extensao !== "docx") {
-    throw new Error("O questionário deve estar em formato .docx.");
-  }
-
-  if (!window.mammoth) {
-    throw new Error("Mammoth não foi carregado no navegador.");
-  }
-
-  const arrayBuffer = await file.arrayBuffer();
-  const result = await window.mammoth.extractRawText({ arrayBuffer });
-
-  return result.value;
+function limparEspacosBasico(texto) {
+  return (texto || "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .trim();
 }
 
-/* ============================= */
-/* NORMALIZAÇÃO DE ÁUDIO (NOVO) */
-/* ============================= */
+/**
+ * Envia arquivo de áudio para a API Python e retorna a transcrição
+ */
+async function transcreverArquivo(file) {
+  setStatus("loading", `Enviando: ${file.name}`);
 
-async function converterParaWav16kMono(file) {
-  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  const arrayBuffer = await file.arrayBuffer();
-  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  const formData = new FormData();
+  formData.append("arquivo", file);
 
-  const offlineCtx = new OfflineAudioContext(1, audioBuffer.duration * 16000, 16000);
-  const source = offlineCtx.createBufferSource();
+  const response = await fetch(`${API_URL}/transcrever`, {
+    method: "POST",
+    body: formData
+  });
 
-  const monoBuffer = offlineCtx.createBuffer(1, audioBuffer.length, audioBuffer.sampleRate);
-
-  for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
-    const channelData = audioBuffer.getChannelData(i);
-    const monoData = monoBuffer.getChannelData(0);
-    for (let j = 0; j < channelData.length; j++) {
-      monoData[j] += channelData[j] / audioBuffer.numberOfChannels;
-    }
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || `Erro na API: ${response.status}`);
   }
 
-  source.buffer = monoBuffer;
-  source.connect(offlineCtx.destination);
-  source.start();
+  const resultado = await response.json();
 
-  const renderedBuffer = await offlineCtx.startRendering();
-
-  return bufferToWave(renderedBuffer, 16000);
+  return {
+    nomeEntrevista: resultado.nomeEntrevista || file.name,
+    transcricao: resultado.transcricao || ""
+  };
 }
-
-function bufferToWave(abuffer, sampleRate) {
-  const numOfChan = abuffer.numberOfChannels;
-  const length = abuffer.length * numOfChan * 2 + 44;
-  const buffer = new ArrayBuffer(length);
-  const view = new DataView(buffer);
-
-  let offset = 0;
-
-  function writeString(str) {
-    for (let i = 0; i < str.length; i++) {
-      view.setUint8(offset++, str.charCodeAt(i));
-    }
-  }
-
-  writeString("RIFF");
-  view.setUint32(offset, 36 + abuffer.length * 2, true); offset += 4;
-  writeString("WAVE");
-  writeString("fmt ");
-  view.setUint32(offset, 16, true); offset += 4;
-  view.setUint16(offset, 1, true); offset += 2;
-  view.setUint16(offset, 1, true); offset += 2;
-  view.setUint32(offset, sampleRate, true); offset += 4;
-  view.setUint32(offset, sampleRate * 2, true); offset += 4;
-  view.setUint16(offset, 2, true); offset += 2;
-  view.setUint16(offset, 16, true); offset += 2;
-  writeString("data");
-  view.setUint32(offset, abuffer.length * 2, true); offset += 4;
-
-  const channelData = abuffer.getChannelData(0);
-  let index = 0;
-
-  for (let i = 0; i < channelData.length; i++, offset += 2) {
-    let sample = Math.max(-1, Math.min(1, channelData[i]));
-    view.setInt16(offset, sample * 0x7fff, true);
-  }
-
-  return new Blob([view], { type: "audio/wav" });
-}
-
-/* ============================= */
 
 form?.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const audios = Array.from(document.getElementById("audio")?.files || []);
-  const questionario = document.getElementById("questionario")?.files?.[0];
 
-  if (!audios.length || !questionario) {
-    setStatus("error", "Selecione os áudios e o questionário.");
+  if (!audios.length) {
+    setStatus("error", "Selecione ao menos um áudio.");
     return;
   }
 
@@ -222,47 +168,24 @@ form?.addEventListener("submit", async (event) => {
   }
 
   try {
-    setStatus("loading", "Lendo questionário...");
-    const questionarioTexto = await extrairTextoQuestionario(questionario);
+    limparResultados();
+    transcricoesAtuais = [];
+    if (btnDownloadTranscricoes) btnDownloadTranscricoes.disabled = true;
 
-    setStatus("loading", "Normalizando áudios...");
-
-    const audiosConvertidos = [];
+    const resultados = [];
 
     for (const audio of audios) {
-      try {
-        const wavBlob = await converterParaWav16kMono(audio);
-        const novoArquivo = new File([wavBlob], audio.name + ".wav", { type: "audio/wav" });
-        audiosConvertidos.push(novoArquivo);
-      } catch (e) {
-        console.warn("Falha ao converter:", audio.name);
-      }
+      const item = await transcreverArquivo(audio);
+      resultados.push(item);
+      renderizarResultados(resultados);
     }
 
-    const formData = new FormData();
-
-    audiosConvertidos.forEach((audioFile) => {
-      formData.append("audio", audioFile);
-    });
-
-    formData.append("questionarioTexto", questionarioTexto);
-    formData.append("questionarioNome", questionario.name);
-
-    setStatus("loading", "Enviando para análise...");
-
-    const response = await fetch(N8N_WEBHOOK_URL, {
-      method: "POST",
-      body: formData
-    });
-
-    const data = await response.json();
-
-    const resultados = normalizarResultados(data);
-
+    transcricoesAtuais = resultados;
     renderizarResultados(resultados);
-    setStatus("success", "Análise concluída.");
+
+    setStatus("success", "Transcrição concluída.");
   } catch (error) {
     console.error(error);
-    setStatus("error", error.message);
+    setStatus("error", error?.message || "Erro ao transcrever os áudios.");
   }
 });
