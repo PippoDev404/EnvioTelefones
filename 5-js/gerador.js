@@ -1010,7 +1010,6 @@ function buildFinalOutputRow(rawRow, columnIndexes, diaPesqColIndex) {
         rawRow[columnIndexes.estado] ?? "",
         rawRow[columnIndexes.regiao] ?? "",
         rawRow[columnIndexes.setor] ?? "",
-        rawRow[columnIndexes.sexo] ?? "", // <-- NOVO
         rawRow[columnIndexes.categoria] ?? "",
         rawRow[columnIndexes.tf1] ?? "",
         rawRow[columnIndexes.tf2] ?? "",
@@ -1157,7 +1156,6 @@ async function handleProcess() {
             "SETOR_CIDADE",
             "SETO"
         ]);
-        const sexoCol = findHeaderIndex(headerRow, ["SEXO"]);
         const categoriaCol = findHeaderIndex(headerRow, ["CATEGORIA", "CATE"]);
         const tf1Col = findHeaderIndex(headerRow, ["TF1"]);
         const tf2Col = findHeaderIndex(headerRow, ["TF2"]);
@@ -1184,7 +1182,6 @@ async function handleProcess() {
         ensureRequiredColumn(estadoCol, "ESTADO");
         ensureRequiredColumn(regiaoCol, "REGIÃO");
         ensureRequiredColumn(setorCol, "SETOR DENTRO DA CIDADE");
-        ensureRequiredColumn(sexoCol, "SEXO");
         ensureRequiredColumn(categoriaCol, "CATEGORIA");
         ensureRequiredColumn(tf1Col, "TF1");
         ensureRequiredColumn(tf2Col, "TF2");
@@ -1233,7 +1230,6 @@ async function handleProcess() {
             "ESTADO",
             "REGIÃO",
             "SETOR",
-            "SEXO", // <-- NOVO
             "CATEGORIA",
             "TF1",
             "TF2",
@@ -1249,7 +1245,6 @@ async function handleProcess() {
             estado: estadoCol,
             regiao: regiaoCol,
             setor: setorCol,
-            sexo: sexoCol, // <-- NOVO
             categoria: categoriaCol,
             tf1: tf1Col,
             tf2: tf2Col,
