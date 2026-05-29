@@ -4,7 +4,7 @@
     box-sizing: border-box;
 }
 
-:root{
+:root {
     --bg: #000000;
     --surface: #191919;
     --surface-2: #1e1e1e;
@@ -23,13 +23,13 @@
 
     --success: #22C55E;
     --warning: #F59E0B;
-    --danger:  #EF4444;
+    --danger: #EF4444;
 
-    --shadow: 0 10px 30px rgba(0,0,0,.35);
+    --shadow: 0 10px 30px rgba(0, 0, 0, .35);
     --radius: 15px;
 }
 
-:root.active{
+:root.active {
     --bg: #FFFFFF;
     --surface: #ebebeb;
     --surface-2: #d5d5d5;
@@ -48,9 +48,9 @@
 
     --success: #22C55E;
     --warning: #F59E0B;
-    --danger:  #EF4444;
+    --danger: #EF4444;
 
-    --shadow: 0 10px 30px rgba(0,0,0,.15);
+    --shadow: 0 10px 30px rgba(0, 0, 0, .15);
 }
 
 body {
@@ -74,12 +74,12 @@ body.active {
     align-items: flex-start;
     justify-content: space-between;
     gap: 20px;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     backdrop-filter: blur(8px);
 }
 
 body.active .topbar {
-    border-bottom: 1px solid rgba(0,0,0,0.08);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .topbar h1 {
@@ -102,7 +102,7 @@ body.active .topbar {
 }
 
 .card {
-    background: rgba(25,25,25,0.92);
+    background: rgba(25, 25, 25, 0.92);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
@@ -110,7 +110,7 @@ body.active .topbar {
 }
 
 body.active .card {
-    background: rgba(255,255,255,0.78);
+    background: rgba(255, 255, 255, 0.78);
 }
 
 .hidden {
@@ -143,9 +143,9 @@ body.active .card {
 }
 
 .badge.success {
-    border-color: rgba(34,197,94,.4);
+    border-color: rgba(34, 197, 94, .4);
     color: #dcffe8;
-    background: rgba(34,197,94,.12);
+    background: rgba(34, 197, 94, .12);
 }
 
 body.active .badge.success {
@@ -198,6 +198,13 @@ body.active .badge.success {
     cursor: pointer;
 }
 
+.field small,
+.field-help {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
 .actions {
     display: flex;
     gap: 12px;
@@ -248,7 +255,7 @@ body.active .badge.success {
 .danger-btn {
     background: transparent;
     color: #fff;
-    border: 1px solid rgba(239,68,68,.35);
+    border: 1px solid rgba(239, 68, 68, .35);
 }
 
 body.active .danger-btn {
@@ -385,11 +392,11 @@ th {
 }
 
 tbody tr:hover {
-    background: rgba(255,255,255,0.03);
+    background: rgba(255, 255, 255, 0.03);
 }
 
 body.active tbody tr:hover {
-    background: rgba(0,0,0,0.03);
+    background: rgba(0, 0, 0, 0.03);
 }
 
 /* PREVIEW BONITA */
@@ -415,7 +422,7 @@ body.active tbody tr:hover {
     border: 1px solid var(--border);
     border-radius: 14px;
     background: var(--surface);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 }
 
 .preview-table {
@@ -451,19 +458,19 @@ body.active tbody tr:hover {
 }
 
 .preview-table tbody tr:hover {
-    background: rgba(255,255,255,0.03);
+    background: rgba(255, 255, 255, 0.03);
 }
 
 body.active .preview-table tbody tr:hover {
-    background: rgba(0,0,0,0.03);
+    background: rgba(0, 0, 0, 0.03);
 }
 
 .preview-table tbody tr:nth-child(even) {
-    background: rgba(255,255,255,0.015);
+    background: rgba(255, 255, 255, 0.015);
 }
 
 body.active .preview-table tbody tr:nth-child(even) {
-    background: rgba(0,0,0,0.015);
+    background: rgba(0, 0, 0, 0.015);
 }
 
 .preview-col-index {

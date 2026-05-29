@@ -9,7 +9,15 @@ const baseFileInput = document.querySelector("#baseFile");
 const cotaFileInput = document.querySelector("#cotaFile");
 const hasCotaSelect = document.querySelector("#hasCota");
 const maxNumbersPerPesqInput = document.querySelector("#maxNumbersPerPesq");
+
+// Inputs de limite por categoria
 const maxPesquisaPerPesqInput = document.querySelector("#maxPesquisaPerPesq");
+const maxVivoPerPesqInput = document.querySelector("#maxVivoPerPesq");
+const maxClaroPerPesqInput = document.querySelector("#maxClaroPerPesq");
+const maxOiPerPesqInput = document.querySelector("#maxOiPerPesq");
+const maxTimPerPesqInput = document.querySelector("#maxTimPerPesq");
+const maxBrasilPerPesqInput = document.querySelector("#maxBrasilPerPesq");
+
 const processBtn = document.querySelector("#processBtn");
 const downloadBtn = document.querySelector("#downloadBtn");
 
@@ -444,14 +452,19 @@ function getMaxNumbersPerPesq() {
     return value;
 }
 
-function getMaxPesquisaPerPesq() {
-    const value = Number(maxPesquisaPerPesqInput?.value);
+function getMaxPerCategoryPerPesq() {
+    const categories = ["PESQUISA", "VIVO", "CLARO", "OI", "TIM", "BRASIL"];
+    const limits = {};
 
-    if (!Number.isFinite(value) || value < 0) {
-        return 0;
-    }
+    categories.forEach(cat => {
+        const input = document.querySelector(`#max${cat}PerPesq`);
+        const raw = input ? String(input.value).trim() : "";
+        const value = raw === "" ? 0 : Number(raw);
+        // 0 ou negativo = ILIMITADO
+        limits[cat] = (Number.isFinite(value) && value > 0) ? Math.floor(value) : 0;
+    });
 
-    return Math.floor(value);
+    return limits;
 }
 
 function getManualDayConfigs() {
@@ -668,12 +681,12 @@ async function buildPoolsByMode(usefulRefs) {
    DISTRIBUIÇÃO POR CATEGORIA
 ========================= */
 
-async function buildOrderedCategoryGroups(rowRefs) {
+async function buildOrderedCategoryGroups(rowPool) {
     const grouped = new Map();
     const others = new Map();
 
-    for (let i = 0; i < rowRefs.length; i++) {
-        const item = rowRefs[i];
+    for (let i = 0; i < rowPool.length; i++) {
+        const item = rowPool[i];
         const normalized = normalizeCategory(item.categoria);
 
         if (CATEGORY_PRIORITY.includes(normalized)) {
@@ -722,93 +735,61 @@ async function buildOrderedCategoryGroups(rowRefs) {
 }
 
 async function distributeRowsByCategoryRoundRobin(rowPool, targets, options = {}) {
-    const maxPesquisaPerPesq =
-        Number.isInteger(options.maxPesquisaPerPesq) && options.maxPesquisaPerPesq > 0
-            ? options.maxPesquisaPerPesq
-            : 0;
+    const maxPerCategory = options.maxPerCategory || {};
 
     const categoryGroups = await buildOrderedCategoryGroups(rowPool);
     let totalAssigned = 0;
 
+    // Inicializa contadores por categoria para cada alvo
     for (let t = 0; t < targets.length; t++) {
-        if (!Array.isArray(targets[t].rows)) targets[t].rows = [];
-        if (!Number.isFinite(targets[t].pesquisaAssigned)) targets[t].pesquisaAssigned = 0;
+        targets[t].rows = targets[t].rows || [];
+        targets[t].categoryAssigned = targets[t].categoryAssigned || {};
+        CATEGORY_PRIORITY.forEach(cat => {
+            if (typeof targets[t].categoryAssigned[cat] !== "number") targets[t].categoryAssigned[cat] = 0;
+        });
     }
 
     for (let groupIndex = 0; groupIndex < categoryGroups.length; groupIndex++) {
         const group = categoryGroups[groupIndex];
+        const normalizedCategory = normalizeCategory(group.category);
+        const categoryLimit = maxPerCategory[normalizedCategory] || 0; // 0 = ilimitado
         let cursor = 0;
-        const isPesquisaCategory = normalizeCategory(group.category) === "PESQUISA";
+        let targetPointer = 0; // Rodízio circular justo
 
         while (cursor < group.rows.length) {
-            const targetsNeedingRows = [];
-
+            // Verifica se ainda há alguém capaz de receber
+            let canAssign = false;
             for (let t = 0; t < targets.length; t++) {
                 if (targets[t].remaining > 0) {
-                    targetsNeedingRows.push(targets[t]);
+                    if (categoryLimit > 0 && targets[t].categoryAssigned[normalizedCategory] >= categoryLimit) continue;
+                    canAssign = true; break;
                 }
             }
+            if (!canAssign) break;
 
-            if (!targetsNeedingRows.length) {
-                const remainingPool = [];
+            // Rodízio justo: pula quem está cheio ou atingiu o limite da categoria
+            let attempts = 0;
+            let assignedInRound = false;
+            while (attempts < targets.length && cursor < group.rows.length) {
+                const tIdx = targetPointer % targets.length;
+                targetPointer++;
+                attempts++;
 
-                for (let i = groupIndex; i < categoryGroups.length; i++) {
-                    const currentGroup = categoryGroups[i];
-
-                    if (i === groupIndex) {
-                        for (let j = cursor; j < currentGroup.rows.length; j++) {
-                            remainingPool.push(currentGroup.rows[j]);
-                        }
-                    } else {
-                        for (let j = 0; j < currentGroup.rows.length; j++) {
-                            remainingPool.push(currentGroup.rows[j]);
-                        }
-                    }
-
-                    await sleepFrame();
-                }
-
-                return { totalAssigned, remainingPool };
-            }
-
-            let assignedInThisRound = false;
-
-            for (let i = 0; i < targetsNeedingRows.length; i++) {
-                const target = targetsNeedingRows[i];
-
-                if (cursor >= group.rows.length) break;
+                const target = targets[tIdx];
                 if (target.remaining <= 0) continue;
+                if (categoryLimit > 0 && target.categoryAssigned[normalizedCategory] >= categoryLimit) continue;
 
-                if (
-                    isPesquisaCategory &&
-                    maxPesquisaPerPesq > 0 &&
-                    target.pesquisaAssigned >= maxPesquisaPerPesq
-                ) {
-                    continue;
-                }
-
-                const rowRef = group.rows[cursor];
-                cursor += 1;
-
-                target.rows.push(rowRef);
-                target.remaining -= 1;
-                totalAssigned += 1;
-                assignedInThisRound = true;
-
-                if (isPesquisaCategory) {
-                    target.pesquisaAssigned += 1;
-                }
-            }
-
-            if (!assignedInThisRound) {
+                target.rows.push(group.rows[cursor]);
+                target.remaining--;
+                target.categoryAssigned[normalizedCategory]++;
+                totalAssigned++;
+                cursor++;
+                assignedInRound = true;
                 break;
             }
-
-            if (cursor % UI_YIELD_EVERY === 0) {
-                await sleepFrame();
-            }
+            if (!assignedInRound) break;
+            if (cursor % UI_YIELD_EVERY === 0) await sleepFrame();
         }
-
         await sleepFrame();
     }
 
@@ -1205,19 +1186,30 @@ async function handleProcess() {
         addLog("Limpando colunas antigas de N° PESQ e DIA PESQ...", "ok");
         clearColumnsInRows(rows, dataStartIndex, [pesqCol, dataPesquisaCol]);
 
+        // Lê limites por categoria antes de processar
+        const maxPerCategory = getMaxPerCategoryPerPesq();
+        const activeLimits = Object.entries(maxPerCategory)
+            .filter(([_, val]) => val > 0)
+            .map(([cat, val]) => `${cat}: ${val}`);
+        if (activeLimits.length) {
+            addLog(`Limites por categoria ativos: ${activeLimits.join(" | ")} (0 = ilimitado)`, "ok");
+        }
+
         if (hasCota) {
             await processWithCota({
                 rows,
                 usefulRefs,
                 dataPesquisaCol,
-                pesqCol
+                pesqCol,
+                maxPerCategory
             });
         } else {
             await processWithoutCota({
                 rows,
                 usefulRefs,
                 dataPesquisaCol,
-                pesqCol
+                pesqCol,
+                maxPerCategory
             });
         }
 
@@ -1294,7 +1286,8 @@ async function processWithoutCota({
     rows,
     usefulRefs,
     dataPesquisaCol,
-    pesqCol
+    pesqCol,
+    maxPerCategory
 }) {
     addLog("Modo selecionado: SEM COTA", "ok");
 
@@ -1335,12 +1328,17 @@ async function processWithoutCota({
                 pesquisador,
                 date: dayConfig.date,
                 remaining: maxPerPesq,
-                rows: []
+                rows: [],
+                categoryAssigned: {}
             });
         });
     });
 
-    const { totalAssigned } = await distributeRowsByCategoryRoundRobin(usefulRefs, targets);
+    const { totalAssigned } = await distributeRowsByCategoryRoundRobin(
+        usefulRefs,
+        targets,
+        { maxPerCategory }
+    );
 
     const totalRemaining = targets.reduce((sum, target) => sum + target.remaining, 0);
     if (totalRemaining > 0) {
@@ -1370,7 +1368,8 @@ async function processWithCota({
     rows,
     usefulRefs,
     dataPesquisaCol,
-    pesqCol
+    pesqCol,
+    maxPerCategory
 }) {
     addLog("Modo selecionado: COM COTA", "ok");
 
@@ -1466,10 +1465,15 @@ async function processWithCota({
                 pesquisador: demand.pesquisador,
                 date,
                 remaining: Math.floor(demand.questionarios * multiplier),
-                rows: []
+                rows: [],
+                categoryAssigned: {}
             }));
 
-            const { totalAssigned, remainingPool } = await distributeRowsByCategoryRoundRobin(poolForDate, targets);
+            const { totalAssigned, remainingPool } = await distributeRowsByCategoryRoundRobin(
+                poolForDate,
+                targets,
+                { maxPerCategory }
+            );
 
             shared.perDatePools.set(date, remainingPool);
 
