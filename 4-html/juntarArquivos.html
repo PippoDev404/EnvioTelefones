@@ -10,7 +10,7 @@
 
     <link rel="stylesheet" href="../3-css/juntarArquivos.css">
     <link rel="stylesheet" href="/1-componentes/global.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" integrity="sha512-2SwdPD6INVrV/lHTZbO2nodKhrnDdJK9/kg2XD1r9uGqPo1cUbujc+IYdlYdEErWNu69gVcYgdxlmVmzTWnetw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -52,6 +52,18 @@
                     <input type="number" id="grupo" min="1" value="5">
                 </div>
 
+                <div class="form-group">
+                    <label for="nomeArquivo"><strong><i class="fas fa-tag"></i> Nome base do arquivo:</strong></label>
+                    <input type="text" id="nomeArquivo" placeholder="Ex: relatorio" value="arquivo">
+                </div>
+
+                <!-- NOVO CAMPO: Número inicial -->
+                <div class="form-group">
+                    <label for="numeroInicial"><strong><i class="fas fa-list-ol"></i> Número inicial:</strong></label>
+                    <input type="text" id="numeroInicial" inputmode="numeric" pattern="[0-9]*"
+                        placeholder="Ex: 1, 01 ou 010" value="1">
+                </div>
+
                 <div class="acoesHero">
                     <button id="btnProcessar" class="botaoPrimario">
                         <i class="fas fa-play"></i> Juntar Arquivos
@@ -81,6 +93,7 @@
             <div id="resultadosGrid" class="gradeCards"></div>
         </div>
     </div>
+
     <div id="footer"></div>
     <script src="../5-js/juntarArquivos.js"></script>
 </body>

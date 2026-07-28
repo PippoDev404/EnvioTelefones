@@ -3,6 +3,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnLimpar = document.getElementById('btnLimpar');
     const inputArquivos = document.getElementById('arquivos');
     const inputGrupo = document.getElementById('grupo');
+    const inputNomeArquivo = document.getElementById('nomeArquivo');
+    const inputNumeroInicial = document.getElementById('numeroInicial'); // NOVO
     const statusContainer = document.getElementById('statusContainer');
     const statusTexto = document.getElementById('statusTexto');
     const statusBadge = document.getElementById('statusBadge');
@@ -17,12 +19,21 @@ document.addEventListener('DOMContentLoaded', () => {
     async function processar() {
         const grupo = parseInt(inputGrupo.value);
 
+        // Pega o valor como texto para preservar os zeros à esquerda (ex: "010")
+        const numeroInicialStr = inputNumeroInicial.value.trim() || "1";
+        const numeroInicial = parseInt(numeroInicialStr, 10);
+        const digitos = numeroInicialStr.length; // Define quantos zeros usar baseado no que o usuário digitou
+
         if (!inputArquivos.files.length) {
             mostrarStatus('Selecione pelo menos um arquivo!', 'warn');
             return;
         }
         if (grupo < 1) {
             mostrarStatus('O grupo deve ser pelo menos 1!', 'warn');
+            return;
+        }
+        if (isNaN(numeroInicial) || numeroInicial < 1) {
+            mostrarStatus('O número inicial deve ser válido!', 'warn');
             return;
         }
 
@@ -73,10 +84,16 @@ document.addEventListener('DOMContentLoaded', () => {
             mostrarStatus('Criando arquivos finais...', 'warn');
             const zip = new JSZip();
 
+            const nomeBase = (inputNomeArquivo.value.trim() || 'arquivo').replace(/[^a-zA-Z0-9_-]/g, '_');
+
             for (let i = 0; i < grupos.length; i++) {
                 const docx = htmlDocx.asBlob(grupos[i].html);
-                const numeroGrupo = String(i + 1).padStart(3, '0');
-                zip.file(`grupo_${numeroGrupo}.docx`, docx);
+                const numeroAtual = numeroInicial + i;
+
+                // Formata o número com a quantidade de dígitos que o usuário definiu no início
+                const numeroFormatado = String(numeroAtual).padStart(digitos, '0');
+
+                zip.file(`${nomeBase}_${numeroFormatado}.docx`, docx);
                 progressBar.style.width = (50 + ((i + 1) / grupos.length * 50)) + '%';
             }
 
@@ -84,14 +101,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `arquivos_juntos.zip`;
+            a.download = `${nomeBase}_juntos.zip`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
 
             mostrarStatus(`${grupos.length} arquivo(s) gerado(s) com sucesso!`, 'ok');
-            mostrarResultados(grupos);
+            mostrarResultados(grupos, nomeBase, numeroInicial, digitos);
         } catch (err) {
             console.error(err);
             mostrarStatus('Erro ao processar: ' + err.message, 'err');
@@ -101,14 +118,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function mostrarResultados(grupos) {
+    function mostrarResultados(grupos, nomeBase, numeroInicial, digitos) {
         resultadosGrid.innerHTML = '';
         grupos.forEach((grupo, idx) => {
+            const numeroAtual = numeroInicial + idx;
+            const numeroFormatado = String(numeroAtual).padStart(digitos, '0');
+
             const card = document.createElement('div');
             card.className = 'cardResultado';
             card.innerHTML = `
                 <div class="iconeCard"><i class="fas fa-file-word"></i></div>
-                <h3>Grupo ${String(idx + 1).padStart(3, '0')}</h3>
+                <h3>${nomeBase}_${numeroFormatado}.docx</h3>
                 <p>${grupo.nomes.length} arquivo(s) combinado(s)</p>
             `;
             resultadosGrid.appendChild(card);
@@ -135,6 +155,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function limpar() {
         inputArquivos.value = '';
         inputGrupo.value = '5';
+        inputNomeArquivo.value = 'arquivo';
+        inputNumeroInicial.value = '1'; // Reseta o número inicial
         statusContainer.classList.add('hidden');
         resultadosContainer.classList.add('hidden');
         progressBar.style.width = '0%';
