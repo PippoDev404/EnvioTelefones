@@ -1,0 +1,283 @@
+.paginaInicial {
+    max-width: 1200px;
+    margin: auto;
+    padding: 40px 20px;
+    color: var(--text);
+}
+
+.tituloSecao {
+    font-size: 22px;
+    margin-bottom: 16px;
+    color: var(--text);
+}
+
+.textoMuted {
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* =========================
+   HERO
+========================= */
+
+.secaoHero {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 48px;
+    box-shadow: var(--shadow);
+    margin-bottom: 22px;
+}
+
+.heroConteudo {
+    display: flex;
+    justify-content: space-between;
+    gap: 40px;
+    flex-wrap: wrap;
+}
+
+.heroTexto {
+    flex: 1;
+    min-width: 320px;
+}
+
+.seloSistema {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.tituloPrincipal {
+    font-size: 38px;
+    margin: 8px 0 10px;
+    color: var(--text);
+}
+
+.subtituloPrincipal {
+    margin-bottom: 24px;
+    color: var(--text-muted);
+}
+
+/* =========================
+   FORMULÁRIO
+========================= */
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text);
+}
+
+.form-group input[type="file"],
+.form-group input[type="number"] {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    color: var(--text);
+    font-size: 14px;
+    box-sizing: border-box;
+    transition: .2s;
+}
+
+.form-group input[type="file"]:hover,
+.form-group input[type="number"]:hover {
+    border-color: var(--primary);
+}
+
+.form-group input[type="file"]:focus,
+.form-group input[type="number"]:focus {
+    outline: none;
+    border-color: var(--primary);
+    background: var(--surface);
+}
+
+/* =========================
+   BOTÕES
+========================= */
+
+.acoesHero {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 20px;
+}
+
+.botaoPrimario {
+    background: var(--primary);
+    color: var(--primary-text);
+    padding: 12px 20px;
+    border-radius: var(--radius);
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: .2s;
+    font-size: 14px;
+}
+
+.botaoPrimario:hover {
+    background: var(--primary-hover);
+}
+
+.botaoPrimario:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.botaoSecundario {
+    background: var(--secondary);
+    color: var(--secondary-text);
+    padding: 12px 20px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: .2s;
+    font-size: 14px;
+}
+
+.botaoSecundario:hover {
+    background: var(--secondary-hover);
+}
+
+/* =========================
+   STATUS
+========================= */
+
+.secaoStatus {
+    margin-bottom: 26px;
+}
+
+.statusCard {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    box-shadow: var(--shadow);
+}
+
+.statusTopo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 12px;
+}
+
+.badgeStatus {
+    font-size: 12px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+.badgeOk {
+    border-color: color-mix(in srgb, var(--success) 55%, var(--border));
+    background: color-mix(in srgb, var(--success) 12%, var(--surface));
+    color: var(--success);
+}
+
+.badgeWarn {
+    border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+    background: color-mix(in srgb, var(--warning) 12%, var(--surface));
+    color: var(--warning);
+}
+
+.badgeErr {
+    border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+    background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+    color: var(--danger);
+}
+
+/* =========================
+   PROGRESS BAR
+========================= */
+
+.progress-container {
+    background: var(--surface-2);
+    height: 20px;
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-top: 15px;
+    border: 1px solid var(--border);
+}
+
+.progress-bar {
+    background: var(--primary);
+    height: 100%;
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+/* =========================
+   RESULTADOS
+========================= */
+
+.secaoAcoes {
+    margin-bottom: 40px;
+}
+
+.gradeCards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+}
+
+.cardResultado {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
+    color: var(--text);
+    box-shadow: var(--shadow);
+    transition: .2s;
+}
+
+.cardResultado:hover {
+    background: var(--surface-2);
+    transform: translateY(-4px);
+}
+
+.iconeCard {
+    font-size: 28px;
+    margin-bottom: 10px;
+    color: var(--primary);
+}
+
+.cardResultado h3 {
+    margin: 0 0 8px 0;
+    font-size: 16px;
+}
+
+.cardResultado p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* =========================
+   RESPONSIVO
+========================= */
+
+@media (max-width: 900px) {
+    .heroConteudo {
+        flex-direction: column;
+    }
+
+    .secaoHero {
+        padding: 30px;
+    }
+
+    .tituloPrincipal {
+        font-size: 28px;
+    }
+}

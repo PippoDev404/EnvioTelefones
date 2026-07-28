@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Junção Arquivos - IBESPE Sistema de Envio</title>
+    <script defer src="/config.js"></script>
+    <link rel="icon" type="image/png" sizes="32x32" href="/0-imgs/IconIBESPE.jpg">
+
+    <link rel="stylesheet" href="../3-css/juntarArquivos.css">
+    <link rel="stylesheet" href="/1-componentes/global.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" integrity="sha512-2SwdPD6INVrV/lHTZbO2nodKhrnDdJK9/kg2XD1r9uGqPo1cUbujc+IYdlYdEErWNu69gVcYgdxlmVmzTWnetw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
+
+    <script defer type="module" src="/2-header-footer/header-footer.js"></script>
+    <script defer src="/5-js/db.js"></script>
+    <script defer type="module" src="/5-js/home.js"></script>
+</head>
+
+<body>
+    <div id="header"></div>
+
+    <div class="paginaInicial">
+        <div class="secaoHero">
+            <div class="heroConteudo">
+                <div class="heroTexto">
+                    <span class="seloSistema"><i class="fas fa-file-word"></i> FERRAMENTA</span>
+                    <h1 class="tituloPrincipal">Juntar Arquivos Word</h1>
+                    <p class="subtituloPrincipal">Selecione múltiplos arquivos .docx e agrupe-os em lotes. Cada arquivo
+                        final conterá a quantidade de documentos que você especificar.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="secaoAcoes">
+            <h2 class="tituloSecao"><i class="fas fa-cog"></i> Configurações</h2>
+
+            <div class="statusCard">
+                <div class="form-group">
+                    <label for="arquivos"><strong><i class="fas fa-folder-open"></i> Selecione os arquivos
+                            Word:</strong></label>
+                    <input type="file" id="arquivos" multiple accept=".docx">
+                </div>
+
+                <div class="form-group">
+                    <label for="grupo"><strong><i class="fas fa-layer-group"></i> Quantos arquivos por
+                            grupo?</strong></label>
+                    <input type="number" id="grupo" min="1" value="5">
+                </div>
+
+                <div class="acoesHero">
+                    <button id="btnProcessar" class="botaoPrimario">
+                        <i class="fas fa-play"></i> Juntar Arquivos
+                    </button>
+                    <button id="btnLimpar" class="botaoSecundario">
+                        <i class="fas fa-eraser"></i> Limpar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="statusContainer" class="secaoStatus hidden">
+            <div class="statusCard">
+                <div class="statusTopo">
+                    <span><i class="fas fa-info-circle"></i> Status do Processamento</span>
+                    <span id="statusBadge" class="badgeStatus">Aguardando</span>
+                </div>
+                <p id="statusTexto" class="textoMuted" style="margin-top: 12px;"></p>
+                <div class="progress-container" id="progressContainer">
+                    <div class="progress-bar" id="progressBar"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="resultadosContainer" class="secaoAcoes hidden">
+            <h2 class="tituloSecao"><i class="fas fa-check-circle"></i> Resultados</h2>
+            <div id="resultadosGrid" class="gradeCards"></div>
+        </div>
+    </div>
+    <div id="footer"></div>
+    <script src="../5-js/juntarArquivos.js"></script>
+</body>
+
+</html>
