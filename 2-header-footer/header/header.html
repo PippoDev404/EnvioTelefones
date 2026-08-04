@@ -3,36 +3,43 @@
     <div class="headerLogo">
       <img class="logoImg" src="/0-imgs/logoIBESPE.webp" alt="IBESPE">
     </div>
+
     <nav class="headerMenu" aria-label="Menu principal">
       <ul class="menuLista">
-        <!-- PRINCIPAIS LINKS -->
         <li class="menuItem"><a href="/4-html/home.html" class="navLink" dataRota="home">Home</a></li>
         <li class="menuItem"><a href="/4-html/gerador.html" class="navLink" dataRota="gerador">Gerador</a></li>
         <li class="menuItem"><a href="/4-html/envio.html" class="navLink" dataRota="envio">Enviar</a></li>
         <li class="menuItem"><a href="/4-html/dashboard.html" class="navLink" dataRota="dashboard">Dashboard</a></li>
-        <li class="menuItem"><a href="/4-html/chegadaArquivo.html" class="navLink" dataRota="chegadaArquivo">Arquivos</a></li>
-        <li class="menuItem"><a href="/4-html/administrar.html" class="navLink" dataRota="administrar">Administrar</a></li>
-        <li class="menuItem"><a href="/4-html/juntarArquivos.html" class="navLink" dataRota="juntarArquivos">Juntar Arquivos</a></li>
-  
-        <!-- FOTO DE PERFIL -->
-        <li class="menuItem menuPerfil"><a href="#" class="navLink profileToggle" id="profileToggle" aria-haspopup="true" aria-expanded="false"><img src="/0-imgs/user.svg" alt="Avatar" class="profileAvatar" id="profileAvatar"></a>
-          <div class="profileMenu" id="profileMenu" aria-hidden="true">
-            <div class="profileMenuContent">
-              <div class="theme-option">
-                <span>Tema:</span>
-                <hr class="profileDivider">
-                <button class="theme-toggle-btn" id="themeToggle">
-                  <i class="fas fa-moon"></i>
-                  <span class="slider-knob"></span>
-                  <i class="fas fa-sun"></i>
-                </button>
-              </div>
-              <hr>
-              <a href="#" class="profileItem" id="profileLogout">Sair</a>
-            </div>
-          </div>
+        <li class="menuItem"><a href="/4-html/chegadaArquivo.html" class="navLink"
+            dataRota="chegadaArquivo">Arquivos</a></li>
+        <li class="menuItem"><a href="/4-html/administrar.html" class="navLink" dataRota="administrar">Administrar</a>
         </li>
+        <li class="menuItem"><a href="/4-html/juntarArquivos.html" class="navLink" dataRota="juntarArquivos">Juntar
+            Arquivos</a></li>
+        <li class="menuItem"><a href="/4-html/separarArquivos.html" class="navLink" dataRota="separarArquivos">Separar
+            Arquivos</a></li>
       </ul>
     </nav>
+
+    <div class="headerPerfil menuItem">
+      <a href="#" class="navLink profileToggle" id="profileToggle" aria-haspopup="true" aria-expanded="false">
+        <img src="/0-imgs/user.svg" alt="Avatar" class="profileAvatar" id="profileAvatar">
+      </a>
+      <div class="profileMenu" id="profileMenu" aria-hidden="true">
+        <div class="profileMenuContent">
+          <div class="theme-option">
+            <span>Tema:</span>
+            <hr class="profileDivider">
+            <button class="theme-toggle-btn" id="themeToggle">
+              <i class="fas fa-moon"></i>
+              <span class="slider-knob"></span>
+              <i class="fas fa-sun"></i>
+            </button>
+          </div>
+          <hr>
+          <a href="#" class="profileItem" id="profileLogout">Sair</a>
+        </div>
+      </div>
+    </div>
   </nav>
 </header>

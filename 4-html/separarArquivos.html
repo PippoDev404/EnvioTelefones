@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Separar Arquivos - IBESPE Sistema de Envio</title>
+    <script defer src="/config.js"></script>
+    <link rel="icon" type="image/png" sizes="32x32" href="/0-imgs/IconIBESPE.jpg">
+
+    <link rel="stylesheet" href="/3-css/separarArquivos.css">
+    <link rel="stylesheet" href="/1-componentes/global.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css"
+        integrity="sha512-2SwdPD6INVrV/lHTZbO2nodKhrnDdJK9/kg2XD1r9uGqPo1cUbujc+IYdlYdEErWNu69gVcYgdxlmVmzTWnetw=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+    <script defer type="module" src="/2-header-footer/header-footer.js"></script>
+    <script defer src="/5-js/db.js"></script>
+    <script defer type="module" src="/5-js/separarArquivos.js"></script>
+</head>
+
+<body>
+    <div id="header"></div>
+
+    <main class="paginaSeparar">
+
+        <section class="secaoSeparar">
+            <div class="cabecalhoPagina">
+                <span class="seloSistema">Sistema IBESPE • Separador de Arquivos</span>
+                <h1 class="tituloPrincipal">Separar arquivos por números</h1>
+                <p class="subtituloPrincipal">
+                    Selecione a pasta com os arquivos e a planilha Excel/CSV com os números.
+                    O sistema encontra os arquivos correspondentes e coloca tudo em uma nova pasta.
+                </p>
+            </div>
+
+            <div class="gradeUploads">
+                <label class="cardUpload" for="inputPasta">
+                    <i class="fa-solid fa-folder-open iconeCard"></i>
+                    <h3>1. Pasta com os arquivos</h3>
+                    <p class="textoMuted">Todos os arquivos que vão ser verificados</p>
+                    <span class="botaoPrimario">Escolher pasta</span>
+                    <small id="resumoPasta" class="textoMuted">Nenhuma pasta selecionada</small>
+                </label>
+                <input type="file" id="inputPasta" webkitdirectory directory multiple hidden>
+
+                <label class="cardUpload" for="inputDocumento">
+                    <i class="fa-solid fa-file-excel iconeCard"></i>
+                    <h3>2. Planilha com os números</h3>
+                    <p class="textoMuted">.xlsx, .xls ou .csv contendo os números pra separar</p>
+                    <span class="botaoSecundario">Escolher planilha</span>
+                    <small id="resumoDocumento" class="textoMuted">Nenhuma planilha selecionada</small>
+                </label>
+                <input type="file" id="inputDocumento" accept=".xlsx,.xls,.csv" hidden>
+            </div>
+
+            <div class="acoesSeparar">
+                <button id="btnProcessar" class="botaoPrimario">
+                    <i class="fa-solid fa-magnifying-glass"></i> Processar
+                </button>
+                <button id="btnBaixarZip" class="botaoSecundario" disabled>
+                    <i class="fa-solid fa-file-zipper"></i> Baixar nova pasta (.zip)
+                </button>
+                <button id="btnSalvarPasta" class="botaoTerciario" disabled>
+                    <i class="fa-solid fa-folder-plus"></i> Salvar em nova pasta
+                </button>
+            </div>
+
+            <p id="statusTexto" class="statusTexto" aria-live="polite"></p>
+
+            <section class="secaoResultado">
+                <h2 class="tituloSecao">Arquivos encontrados</h2>
+                <ul id="listaResultado" class="listaResultado"></ul>
+            </section>
+        </section>
+
+    </main>
+
+    <div id="footer"></div>
+</body>
+
+</html>

@@ -1,8 +1,24 @@
+/* =====================================================
+   2-header-footer/header.css — VERSÃO FINAL COMPLETA
+   Full-width • folga responsiva • logo longe dos links
+   ===================================================== */
+
 header {
+  /* folga das bordas: escala com a tela (mín 24px, máx 140px) */
+  --inset: clamp(24px, 6vw, 140px);
+
   background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
   border-bottom: 1px solid var(--border);
-  padding: 20px 0;
+  padding: 6px 0;
   box-shadow: 0 4px 20px color-mix(in srgb, var(--bg) 55%, transparent);
+
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+header>.headerContent {
+  width: 100%;
 }
 
 #header {
@@ -11,44 +27,49 @@ header {
   z-index: 100;
 }
 
+/* ---------- Barra ---------- */
 .headerContent {
-  max-width: 1200px;
+  max-width: 100%;
   margin: 0 auto;
-  padding: 0 20px;
+  padding: 0 var(--inset);
   box-sizing: border-box;
 
   display: flex;
-  justify-content: space-between;
   align-items: center;
 
-  height: 35px;
+  min-height: 56px;
   position: relative;
 }
 
-/* Logo */
+/* ---------- Logo (absoluta na esquerda, não empurra o centro) ---------- */
 .headerLogo {
+  position: absolute;
+  left: var(--inset);
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
 }
 
 .logoImg {
-  width: 175px;
-  height: 100px;
+  width: 160px;
+  height: 90px;
   object-fit: contain;
   transition: filter 0.3s ease, opacity 0.3s ease;
 }
 
-/* tema claro: escurece a logo branca */
 :root.active .logoImg {
   filter: brightness(0.08) contrast(1.15);
 }
 
-/* Menu */
+/* ---------- Menu (CENTRO REAL; padding igual dos 2 lados) ---------- */
 .headerMenu {
+  flex: 1;
+  min-width: 0;
   display: flex;
-  margin-left: auto;
-  justify-content: flex-end;
+  justify-content: center;
   align-items: center;
+  padding: 0 calc(var(--inset) + 170px);
 }
 
 .menuLista {
@@ -57,8 +78,10 @@ header {
   padding: 0;
 
   display: flex;
-  gap: 18px;
+  gap: 14px;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .menuItem {
@@ -85,7 +108,15 @@ header {
   background: color-mix(in srgb, var(--surface-2) 92%, var(--text) 8%);
 }
 
-/* Avatar */
+/* ---------- Avatar (mesma folga da logo, na direita) ---------- */
+.headerPerfil,
+.menuPerfil {
+  position: absolute;
+  right: var(--inset);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
 .profileAvatar {
   width: 45px;
   height: 45px;
@@ -120,7 +151,7 @@ header {
     0 12px 30px color-mix(in srgb, var(--bg) 55%, transparent);
 }
 
-/* Dropdown */
+/* ---------- Dropdown do perfil ---------- */
 .profileMenu {
   position: absolute;
   right: 0;
@@ -170,7 +201,7 @@ header {
   background: color-mix(in srgb, var(--surface-2) 78%, transparent);
 }
 
-/* Theme Toggle Button Styles - Slider */
+/* ---------- Theme Toggle (slider) ---------- */
 .theme-toggle-btn {
   position: relative;
   width: 65px;
@@ -228,7 +259,7 @@ header {
   transform: translateX(40px);
 }
 
-/* Dividers */
+/* ---------- Dividers ---------- */
 .profileDivider {
   border: none;
   border-top: 1px solid var(--border);
@@ -241,7 +272,7 @@ header {
   margin: 6px 0;
 }
 
-/* Theme Option */
+/* ---------- Theme Option ---------- */
 .theme-option {
   display: flex;
   align-items: center;
@@ -254,7 +285,7 @@ header {
   background: color-mix(in srgb, var(--surface-2) 78%, transparent);
 }
 
-.theme-option > span {
+.theme-option>span {
   color: var(--text);
   font-size: 13px;
   font-weight: 500;
@@ -267,13 +298,27 @@ header {
   font-weight: 500;
 }
 
-@media (max-width: 768px) {
-  .profileMenu {
-    right: 12px;
-    left: auto;
-    top: calc(100% + 8px);
+/* =====================================================
+   RESPONSIVO
+   ===================================================== */
+
+/* telas médias: menos folga + logo menor = respiro pros links */
+@media (max-width: 1500px) {
+  header {
+    --inset: 28px;
   }
 
+  .logoImg {
+    width: 130px;
+    height: 74px;
+  }
+
+  .headerMenu {
+    padding: 0 calc(var(--inset) + 150px);
+  }
+}
+
+@media (max-width: 1200px) {
   .menuLista {
     gap: 10px;
   }
@@ -283,8 +328,52 @@ header {
     font-size: 12px;
   }
 
+  .headerMenu {
+    padding: 0 calc(var(--inset) + 140px);
+  }
+}
+
+@media (max-width: 900px) {
+  .headerContent {
+    padding: 0 16px;
+  }
+
+  .headerMenu {
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 0 64px 0 140px;
+    /* logo esquerda + avatar direita */
+  }
+
+  .headerMenu::-webkit-scrollbar {
+    display: none;
+  }
+
+  .menuLista {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .headerLogo {
+    left: 16px;
+  }
+
   .logoImg {
-    width: 150px;
-    height: 86px;
+    width: 110px;
+    height: 62px;
+  }
+
+  .headerPerfil,
+  .menuPerfil {
+    right: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .profileMenu {
+    right: 0;
+    left: auto;
+    top: calc(100% + 8px);
   }
 }

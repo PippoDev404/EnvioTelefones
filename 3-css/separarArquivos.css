@@ -1,0 +1,239 @@
+/* =====================================================
+   3-css/separarArquivos.css
+   Tema cinza — alinhado com home/dashboard do sistema
+   ===================================================== */
+
+.paginaSeparar {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 20px 80px;
+    color: #1c1c1c;
+}
+
+.secaoSeparar {
+    display: grid;
+    gap: 28px;
+}
+
+/* ---------- Cabeçalho ---------- */
+.cabecalhoPagina {
+    display: grid;
+    gap: 12px;
+    justify-items: center;
+    text-align: center;
+}
+
+.seloSistema {
+    display: inline-block;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: #dcdcdc;
+    border: 1px solid #c3c3c3;
+    color: #444;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+}
+
+.tituloPrincipal {
+    margin: 0;
+    font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+    font-weight: 800;
+    color: #111;
+}
+
+.subtituloPrincipal {
+    margin: 0;
+    max-width: 640px;
+    color: #666;
+    line-height: 1.55;
+}
+
+/* ---------- Cards de upload (mesmo estilo dos cards do home) ---------- */
+.gradeUploads {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+}
+
+.cardUpload {
+    display: grid;
+    gap: 10px;
+    justify-items: start;
+    padding: 24px;
+    border: 1.5px dashed #b8b8b8;
+    border-radius: 16px;
+    background: #ededed;
+    cursor: pointer;
+    transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cardUpload:hover {
+    border-color: #8a8a8a;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgb(0 0 0 / 10%);
+}
+
+.cardUpload h3 {
+    margin: 0;
+    font-size: 1.05rem;
+    color: #111;
+}
+
+.cardUpload p {
+    margin: 0;
+}
+
+.cardUpload .iconeCard {
+    font-size: 28px;
+    color: #333;
+}
+
+.cardUpload small {
+    color: #666;
+    word-break: break-all;
+}
+
+/* ---------- Botões (preto / cinza / tracejado, igual ao home) ---------- */
+.paginaSeparar .botaoPrimario,
+.paginaSeparar .botaoSecundario,
+.paginaSeparar .botaoTerciario {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 11px 20px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 0.95rem;
+    text-decoration: none;
+    cursor: pointer;
+    transition: filter 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+}
+
+.paginaSeparar .botaoPrimario {
+    background: #1a1a1a;
+    border: 1px solid #1a1a1a;
+    color: #fff;
+}
+
+.paginaSeparar .botaoSecundario {
+    background: #e2e2e2;
+    border: 1px solid #bdbdbd;
+    color: #222;
+}
+
+.paginaSeparar .botaoTerciario {
+    background: transparent;
+    border: 1.5px dashed #adadad;
+    color: #333;
+}
+
+.paginaSeparar .botaoPrimario:hover,
+.paginaSeparar .botaoSecundario:hover,
+.paginaSeparar .botaoTerciario:hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+}
+
+.paginaSeparar .botaoPrimario:disabled,
+.paginaSeparar .botaoSecundario:disabled,
+.paginaSeparar .botaoTerciario:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    filter: none;
+}
+
+/* ---------- Área de ações ---------- */
+.acoesSeparar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+/* ---------- Status ---------- */
+.statusTexto {
+    min-height: 1.5em;
+    margin: 0;
+    font-weight: 600;
+    color: #444;
+}
+
+/* ---------- Resultado ---------- */
+.tituloSecao {
+    margin: 0 0 10px;
+    font-size: 1.15rem;
+    color: #111;
+}
+
+.listaResultado {
+    max-height: 320px;
+    overflow: auto;
+    margin: 0;
+    padding: 16px 16px 16px 34px;
+    border: 1px solid #c9c9c9;
+    border-radius: 12px;
+    background: #efefef;
+}
+
+.listaResultado:empty {
+    padding: 16px;
+    list-style: none;
+}
+
+.listaResultado:empty::before {
+    content: "Nenhum arquivo listado ainda.";
+    color: #8a8a8a;
+    font-size: 0.9rem;
+}
+
+.listaResultado li {
+    margin: 4px 0;
+    font-family: "Consolas", "Menlo", monospace;
+    font-size: 0.85rem;
+    color: #444;
+    word-break: break-all;
+}
+
+.listaResultado::-webkit-scrollbar {
+    width: 10px;
+}
+
+.listaResultado::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.listaResultado::-webkit-scrollbar-thumb {
+    background: #bdbdbd;
+    border-radius: 8px;
+}
+
+/* ---------- Texto muted ---------- */
+.paginaSeparar .textoMuted {
+    color: #666;
+}
+
+/* ---------- Acessibilidade ---------- */
+.paginaSeparar button:focus-visible,
+.cardUpload:focus-within {
+    outline: 3px solid #9e9e9e;
+    outline-offset: 2px;
+}
+
+/* ---------- Responsivo ---------- */
+@media (max-width: 640px) {
+    .paginaSeparar {
+        padding: 24px 14px 60px;
+    }
+
+    .acoesSeparar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .cardUpload {
+        padding: 18px;
+    }
+}
