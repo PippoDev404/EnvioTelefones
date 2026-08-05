@@ -1,5 +1,9 @@
 // 5-js/separarArquivos.js
-// 3 botões: Processar | Baixar encontrados (.zip) | Baixar NÃO encontrados (.zip)
+// 4 botões:
+//  1) Processar
+//  2) Baixar encontrados (.zip)        -> áudios QUE estão na planilha
+//  3) Baixar NÃO encontrados (.xlsx)   -> planilha original SEM as linhas achadas
+//  4) Baixar fora da planilha (.zip)   -> áudios que NÃO estão na planilha
 import * as XLSX from "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm";
 import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
 
@@ -11,16 +15,18 @@ const resumoPasta = document.getElementById("resumoPasta");
 const resumoDocumento = document.getElementById("resumoDocumento");
 const btnProcessar = document.getElementById("btnProcessar");
 const btnBaixarZip = document.getElementById("btnBaixarZip");
-const btnNaoEncontrados = document.getElementById("btnSalvarPasta"); // reaproveitado p/ "não encontrados"
+const btnNaoEncontrados = document.getElementById("btnSalvarPasta"); // reaproveitado p/ .xlsx
 const statusTexto = document.getElementById("statusTexto");
 const listaResultado = document.getElementById("listaResultado");
 
-/* renomeia os botões pra ficar com só 3 ações */
 if (btnBaixarZip) btnBaixarZip.innerHTML = '<i class="fa-solid fa-file-zipper"></i> Baixar encontrados (.zip)';
-if (btnNaoEncontrados) btnNaoEncontrados.innerHTML = '<i class="fa-solid fa-file-zipper"></i> Baixar NÃO encontrados (.zip)';
+if (btnNaoEncontrados) btnNaoEncontrados.innerHTML = '<i class="fa-solid fa-file-excel"></i> Baixar NÃO encontrados (.xlsx)';
 
 let arquivosEncontrados = [];
-let arquivosNaoEncontrados = [];
+let arquivosForaDaPlanilha = [];
+let estruturaPlanilha = null;
+let numerosEncontrados = new Set();
+let linhasRestantes = 0;
 let ultimoResultado = { achados: [], nao: [], duplicados: [] };
 
 /* ---------- números ---------- */
@@ -87,13 +93,14 @@ function ehColunaTelefone(cabecalho) {
     );
 }
 
-/* ---------- lê a planilha (todas as abas) ---------- */
+/* ---------- lê a planilha (todas as abas) e guarda a estrutura p/ exportar ---------- */
 
 async function lerPlanilha(file) {
     const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: "array", raw: true });
+    const workbook = XLSX.read(buffer, { type: "array", raw: true, cellDates: true });
     const mapaBase = new Map();
     const ocorrencias = new Map();
+    const folhas = [];
     let totalRegistros = 0;
 
     for (const nomeAba of workbook.SheetNames) {
@@ -109,7 +116,9 @@ async function lerPlanilha(file) {
             if (ehColunaTelefone(c)) colunasTelefone.push(i);
         });
 
-        for (const linha of linhas) {
+        const rows = [];
+
+        linhas.forEach((linha, idxLinha) => {
             const sujeito = limpar(sequenciasDe(String(linha[0] ?? "")).join(""));
 
             const celulasAlvo = colunasTelefone.length
@@ -137,8 +146,12 @@ async function lerPlanilha(file) {
                 ocorrencias.get(n).push(sujeito || "(sem ID)");
             }
 
-            if (achouNaLinha) totalRegistros++;
-        }
+            if (idxLinha > 0 && achouNaLinha) totalRegistros++;
+
+            rows.push({ aoa: linha, nums: numsDaLinha });
+        });
+
+        folhas.push({ nome: nomeAba, rows });
     }
 
     const duplicados = [...ocorrencias.entries()]
@@ -152,16 +165,16 @@ async function lerPlanilha(file) {
         }
     }
 
-    return { mapaVariante, totalUnicos: mapaBase.size, totalRegistros, duplicados };
+    return { mapaVariante, totalUnicos: mapaBase.size, totalRegistros, duplicados, folhas };
 }
 
-/* ---------- ZIP genérico (encontrados ou não) ---------- */
+/* ---------- ZIP genérico (STORE = rápido) ---------- */
 
 async function baixarZipDe(arquivos, nomeZip, botao) {
     if (!arquivos.length) return;
 
     try {
-        if (statusTexto) statusTexto.textContent = `Gerando ${nomeZip}...`;
+        if (statusTexto) statusTexto.textContent = `Gerando ${nomeZip} (modo rápido)...`;
         botao.disabled = true;
 
         const zip = new JSZip();
@@ -181,7 +194,7 @@ async function baixarZipDe(arquivos, nomeZip, botao) {
             zip.file(nome, file);
         }
 
-        const blob = await zip.generateAsync({ type: "blob" });
+        const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
@@ -194,16 +207,82 @@ async function baixarZipDe(arquivos, nomeZip, botao) {
         console.error(erro);
         if (statusTexto) statusTexto.textContent = "Erro ao gerar ZIP: " + erro.message;
     } finally {
-        atualizarBotoesZip();
+        atualizarBotoes();
     }
 }
 
-function atualizarBotoesZip() {
-    if (btnBaixarZip) btnBaixarZip.disabled = arquivosEncontrados.length === 0;
-    if (btnNaoEncontrados) btnNaoEncontrados.disabled = arquivosNaoEncontrados.length === 0;
+/* ---------- EXCEL dos NÃO ENCONTRADOS ---------- */
+
+function linhaTemMatch(row) {
+    for (const n of row.nums) {
+        if (numerosEncontrados.has(n)) return true;
+    }
+    return false;
 }
 
-atualizarBotoesZip(); // começa desabilitado
+function baixarPlanilhaRestante() {
+    if (!estruturaPlanilha) return;
+
+    try {
+        if (statusTexto) statusTexto.textContent = "Gerando planilha restante...";
+
+        const wb = XLSX.utils.book_new();
+
+        for (const folha of estruturaPlanilha) {
+            const aoa = [];
+
+            folha.rows.forEach((row, idx) => {
+                if (idx === 0) {
+                    aoa.push(row.aoa); // mantém o cabeçalho
+                    return;
+                }
+                if (!linhaTemMatch(row)) aoa.push(row.aoa);
+            });
+
+            const ws = XLSX.utils.aoa_to_sheet(aoa);
+            XLSX.utils.book_append_sheet(wb, ws, folha.nome.slice(0, 31));
+        }
+
+        XLSX.writeFile(wb, "planilha_nao_encontrados.xlsx");
+
+        if (statusTexto) {
+            statusTexto.textContent = `Planilha restante baixada: ${linhasRestantes} linha(s) sem áudio encontrado.`;
+        }
+    } catch (erro) {
+        console.error(erro);
+        if (statusTexto) statusTexto.textContent = "Erro ao gerar planilha: " + erro.message;
+    }
+}
+
+/* ---------- 4º botão: fora da planilha (.zip) ---------- */
+
+let btnFora = document.getElementById("btnForaPlanilha");
+if (!btnFora) {
+    const containerAcoes =
+        document.querySelector(".acoesSeparar") ||
+        btnProcessar?.parentElement ||
+        document.body;
+
+    btnFora = document.createElement("button");
+    btnFora.id = "btnForaPlanilha";
+    btnFora.className = "botaoTerciario";
+    btnFora.innerHTML = '<i class="fa-solid fa-file-zipper"></i> Baixar fora da planilha (.zip)';
+    btnFora.disabled = true;
+    containerAcoes.appendChild(btnFora);
+    btnFora.addEventListener("click", () =>
+        baixarZipDe(arquivosForaDaPlanilha, "arquivos_fora_da_planilha.zip", btnFora)
+    );
+}
+
+/* ---------- estado dos botões ---------- */
+
+function atualizarBotoes() {
+    if (btnBaixarZip) btnBaixarZip.disabled = arquivosEncontrados.length === 0;
+    if (btnNaoEncontrados) btnNaoEncontrados.disabled = linhasRestantes === 0;
+    if (btnFora) btnFora.disabled = arquivosForaDaPlanilha.length === 0;
+}
+
+atualizarBotoes();
 
 /* ---------- diagnóstico ---------- */
 
@@ -224,14 +303,14 @@ function mostrarDiagnostico(amostraPlanilha, nao, duplicados) {
         `Exemplos de números lidos das colunas de telefone: ${amostraPlanilha.join(", ") || "—"}` +
         (duplicados.length
             ? `<br><br><strong>⚠️ Números duplicados (${duplicados.length}):</strong><br>` +
-            duplicados.slice(0, 10)
-                .map((d) => `${d.numero} → aparece em ${d.ids.length} linhas: ${d.ids.join(", ")}`)
-                .join("<br>") +
-            (duplicados.length > 10 ? "<br>… (veja o relatório completo)" : "")
+              duplicados.slice(0, 10)
+                  .map((d) => `${d.numero} → aparece em ${d.ids.length} linhas: ${d.ids.join(", ")}`)
+                  .join("<br>") +
+              (duplicados.length > 10 ? "<br>… (a planilha restante mantém todos)" : "")
             : "<br><br>Nenhum número duplicado. ✅") +
         (nao.length
-            ? `<br><br><strong>Arquivos que NÃO estão na planilha (${nao.length}):</strong><br>` + fora.join("<br>") +
-            (nao.length > 8 ? "<br>… (baixe o ZIP dos não encontrados pra ver todos)" : "")
+            ? `<br><br><strong>Arquivos da pasta que NÃO estão na planilha (${nao.length}):</strong><br>` + fora.join("<br>") +
+              (nao.length > 8 ? "<br>… (baixe o ZIP “fora da planilha” pra levar todos)" : "")
             : "<br><br>Todos os arquivos da pasta bateram com a planilha. ✅");
 }
 
@@ -256,8 +335,10 @@ inputDocumento?.addEventListener("change", () => {
 btnProcessar?.addEventListener("click", async () => {
     if (listaResultado) listaResultado.innerHTML = "";
     arquivosEncontrados = [];
-    arquivosNaoEncontrados = [];
-    atualizarBotoesZip();
+    arquivosForaDaPlanilha = [];
+    numerosEncontrados = new Set();
+    linhasRestantes = 0;
+    atualizarBotoes();
     if (statusTexto) statusTexto.textContent = "Lendo planilha e processando...";
 
     try {
@@ -267,8 +348,10 @@ btnProcessar?.addEventListener("click", async () => {
         if (!arquivos.length) throw new Error("Selecione a pasta com os arquivos.");
         if (!documento) throw new Error("Selecione o Excel ou CSV com os números.");
 
-        const { mapaVariante, totalUnicos, totalRegistros, duplicados } = await lerPlanilha(documento);
+        const { mapaVariante, totalUnicos, totalRegistros, duplicados, folhas } = await lerPlanilha(documento);
         if (!mapaVariante.size) throw new Error("Nenhum número válido nas colunas de telefone.");
+
+        estruturaPlanilha = folhas;
 
         const achados = [];
         const nao = [];
@@ -289,21 +372,28 @@ btnProcessar?.addEventListener("click", async () => {
             }
 
             if (evidencia) {
+                numerosEncontrados.add(evidencia.numeroPlanilha);
                 achados.push({ file: f, nome: f.webkitRelativePath || f.name, ...evidencia });
             } else {
                 nao.push({ file: f, nome: f.webkitRelativePath || f.name, numeros: numsArquivo });
             }
         }
 
+        linhasRestantes = 0;
+        for (const folha of estruturaPlanilha) {
+            folha.rows.forEach((row, idx) => {
+                if (idx > 0 && !linhaTemMatch(row)) linhasRestantes++;
+            });
+        }
+
         ultimoResultado = { achados, nao, duplicados };
         arquivosEncontrados = achados.map((a) => a.file);
-        arquivosNaoEncontrados = nao.map((n) => n.file);
+        arquivosForaDaPlanilha = nao.map((n) => n.file);
 
         if (statusTexto) {
             statusTexto.textContent =
-                `Concluído. Telefones na planilha: ${totalRegistros} ` +
-                `(${totalUnicos} únicos, ${duplicados.length} duplicado(s)). ` +
-                `Encontrados: ${achados.length} • Não encontrados: ${nao.length}.`;
+                `Concluído. Telefones na planilha: ${totalRegistros} (${totalUnicos} únicos, ${duplicados.length} duplicado(s)). ` +
+                `Encontrados: ${achados.length} • Fora da planilha: ${nao.length} • Linhas restantes: ${linhasRestantes}.`;
         }
 
         for (const a of achados) {
@@ -313,17 +403,15 @@ btnProcessar?.addEventListener("click", async () => {
         }
 
         mostrarDiagnostico([...new Set([...mapaVariante.values()].map((h) => h.numero))].slice(0, 10), nao, duplicados);
-        atualizarBotoesZip();
+        atualizarBotoes();
     } catch (erro) {
         console.error(erro);
         if (statusTexto) statusTexto.textContent = "Erro: " + erro.message;
     }
 });
 
-btnBaixarZip?.addEventListener("click", () => {
-    baixarZipDe(arquivosEncontrados, "arquivos_encontrados.zip", btnBaixarZip);
-});
+btnBaixarZip?.addEventListener("click", () =>
+    baixarZipDe(arquivosEncontrados, "arquivos_encontrados.zip", btnBaixarZip)
+);
 
-btnNaoEncontrados?.addEventListener("click", () => {
-    baixarZipDe(arquivosNaoEncontrados, "arquivos_nao_encontrados.zip", btnNaoEncontrados);
-});
+btnNaoEncontrados?.addEventListener("click", baixarPlanilhaRestante);
