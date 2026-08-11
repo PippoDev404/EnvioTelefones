@@ -10,7 +10,7 @@ import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
 console.log("✅ separarArquivos.js carregou");
 
 /* ⏱️ janela de tolerância da data/hora (em minutos) — mexa aqui se precisar */
-const TOLERANCIA_MIN = 15;
+const TOLERANCIA_MIN = 30;
 
 const inputPasta = document.getElementById("inputPasta");
 const inputDocumento = document.getElementById("inputDocumento");
