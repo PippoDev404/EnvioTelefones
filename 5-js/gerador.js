@@ -350,8 +350,8 @@ function safeFileName(name) {
         .replace(/\s+/g, "_");
 }
 
-// Data/hora atual no nome do arquivo: cada processamento gera nome único,
-// assim você nunca abre um CSV velho por engano.
+// Data/hora atual pra colocar no nome do arquivo — assim cada
+// processamento gera um nome ÚNICO e você nunca abre o CSV velho sem querer.
 function timestampSuffix() {
     const d = new Date();
     const pad = (n) => String(n).padStart(2, "0");
@@ -857,10 +857,7 @@ function assignTargetsToSheet(targets, rows, pesqCol, dataPesquisaCol) {
     return total;
 }
 
-// Marca as linhas não selecionadas como SOBRA:
-// grava SOBRA no N° PESQ, limpa o DIA PESQ e AGORA TAMBÉM
-// grava SOBRA na coluna CATEGORIA (pra aparecer no filtro de categoria).
-function markUnusedRowsAsSobra(usefulRefs, rows, pesqCol, dataPesquisaCol, categoriaCol) {
+function markUnusedRowsAsSobra(usefulRefs, rows, pesqCol, dataPesquisaCol) {
     let sobraCount = 0;
 
     usefulRefs.forEach((ref) => {
@@ -871,7 +868,6 @@ function markUnusedRowsAsSobra(usefulRefs, rows, pesqCol, dataPesquisaCol, categ
         if (!currentPesq) {
             rows[ref.rowIndex][pesqCol] = SOBRA_LABEL;
             rows[ref.rowIndex][dataPesquisaCol] = "";
-            if (categoriaCol >= 0) rows[ref.rowIndex][categoriaCol] = SOBRA_LABEL;
             sobraCount += 1;
         }
     });
@@ -977,6 +973,7 @@ async function buildFinalRowRefs(rows, dataStartIndex, columnIndexes, diaPesqCol
 
         const pesqValue = String(row[columnIndexes.pesq] ?? "").trim();
         if (!pesqValue) continue;
+        // SOBRA entra no arquivo final (vai pro fim da ordenação, depois de todos os P's)
 
         const diaPesqValue =
             diaPesqColIndex >= 0 ? getDisplayDate(row[diaPesqColIndex]) : "";
@@ -1243,8 +1240,7 @@ async function handleProcess() {
             });
         }
 
-        // SOBRA: grava no N° PESQ e também na CATEGORIA
-        const sobraCount = markUnusedRowsAsSobra(usefulRefs, rows, pesqCol, dataPesquisaCol, categoriaCol);
+        const sobraCount = markUnusedRowsAsSobra(usefulRefs, rows, pesqCol, dataPesquisaCol);
         addLog(`Linhas marcadas como SOBRA: ${sobraCount}`, sobraCount > 0 ? "ok" : "warn");
 
         const finalHeaders = [
@@ -1286,6 +1282,7 @@ async function handleProcess() {
             return;
         }
 
+        // Prova de que a SOBRA está dentro do arquivo exportado
         const sobraNoArquivo = finalRowRefs.filter(
             (r) => r.pesqOrder === Number.MAX_SAFE_INTEGER - 1
         ).length;
@@ -1302,6 +1299,8 @@ async function handleProcess() {
             diaPesqColIndex: dataPesquisaCol
         });
 
+        // Nome com data/hora: cada processamento gera um arquivo ÚNICO,
+        // assim você nunca abre o CSV velho por engano.
         generatedFileName = `${safeFileName(baseFile.name)}_PREENCHIDO_${timestampSuffix()}.csv`;
         generatedBlob = new Blob([csvText], {
             type: "text/csv;charset=utf-8;",
@@ -1309,6 +1308,7 @@ async function handleProcess() {
 
         if (downloadBtn) downloadBtn.classList.remove("hidden");
         addLog(`Arquivo final pronto para download: ${generatedFileName}`, "ok");
+        addLog("IMPORTANTE: clique em BAIXAR e abra o arquivo com o nome de AGORA (data/hora). Não abra os CSVs antigos da pasta!", "warn");
     } catch (error) {
         console.error(error);
         addLog(`Erro ao processar: ${error.message || error}`, "error");
