@@ -350,6 +350,14 @@ function safeFileName(name) {
         .replace(/\s+/g, "_");
 }
 
+// Data/hora atual no nome do arquivo: cada processamento gera nome único,
+// assim você nunca abre um CSV velho por engano.
+function timestampSuffix() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}_${pad(d.getHours())}h${pad(d.getMinutes())}m${pad(d.getSeconds())}s`;
+}
+
 function triggerDownload(blob, fileName) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -449,7 +457,6 @@ function getMaxNumbersPerPesq() {
 ========================= */
 
 function getMaxPerCategoryPerPesq() {
-    // Mapa de todos os inputs da página, com id em lowercase (case-insensitive)
     const idMap = new Map();
     document.querySelectorAll("input").forEach((el) => {
         if (el.id) idMap.set(el.id.toLowerCase(), el);
@@ -460,11 +467,8 @@ function getMaxPerCategoryPerPesq() {
     CATEGORY_PRIORITY.forEach((cat) => {
         const lowerCat = cat.toLowerCase();
 
-        // 1ª tentativa: id exato "max<categoria>perpesq" em qualquer caixa
-        // (casa com maxPesquisaPerPesq, maxPESQUISAPerPesq, maxpesquisaperpesq...)
         let input = idMap.get(`max${lowerCat}perpesq`) || null;
 
-        // 2ª tentativa: qualquer id que contenha "max" + nome da categoria
         if (!input) {
             for (const [id, el] of idMap.entries()) {
                 if (id.includes("max") && id.includes(lowerCat)) {
@@ -475,7 +479,7 @@ function getMaxPerCategoryPerPesq() {
         }
 
         if (!input) {
-            addLog(`Atenção: NÃO encontrei o input de limite da categoria ${cat}. Cole no chat o HTML desses campos.`, "warn");
+            addLog(`Atenção: NÃO encontrei o input de limite da categoria ${cat}.`, "warn");
             limits[cat] = 0;
             return;
         }
@@ -766,7 +770,6 @@ async function distributeRowsByCategoryRoundRobin(rowPool, targets, options = {}
     const categoryGroups = await buildOrderedCategoryGroups(rowPool);
     let totalAssigned = 0;
 
-    // Inicializa contadores por categoria para cada alvo
     for (let t = 0; t < targets.length; t++) {
         targets[t].rows = targets[t].rows || [];
         targets[t].categoryAssigned = targets[t].categoryAssigned || {};
@@ -778,12 +781,11 @@ async function distributeRowsByCategoryRoundRobin(rowPool, targets, options = {}
     for (let groupIndex = 0; groupIndex < categoryGroups.length; groupIndex++) {
         const group = categoryGroups[groupIndex];
         const normalizedCategory = normalizeCategory(group.category);
-        const categoryLimit = maxPerCategory[normalizedCategory] || 0; // 0 = ilimitado
+        const categoryLimit = maxPerCategory[normalizedCategory] || 0;
         let cursor = 0;
-        let targetPointer = 0; // Rodízio circular justo
+        let targetPointer = 0;
 
         while (cursor < group.rows.length) {
-            // Verifica se ainda há alguém capaz de receber
             let canAssign = false;
             for (let t = 0; t < targets.length; t++) {
                 if (targets[t].remaining > 0) {
@@ -793,7 +795,6 @@ async function distributeRowsByCategoryRoundRobin(rowPool, targets, options = {}
             }
             if (!canAssign) break;
 
-            // Rodízio justo: pula quem está cheio ou atingiu o limite da categoria
             let attempts = 0;
             let assignedInRound = false;
             while (attempts < targets.length && cursor < group.rows.length) {
@@ -856,7 +857,10 @@ function assignTargetsToSheet(targets, rows, pesqCol, dataPesquisaCol) {
     return total;
 }
 
-function markUnusedRowsAsSobra(usefulRefs, rows, pesqCol, dataPesquisaCol) {
+// Marca as linhas não selecionadas como SOBRA:
+// grava SOBRA no N° PESQ, limpa o DIA PESQ e AGORA TAMBÉM
+// grava SOBRA na coluna CATEGORIA (pra aparecer no filtro de categoria).
+function markUnusedRowsAsSobra(usefulRefs, rows, pesqCol, dataPesquisaCol, categoriaCol) {
     let sobraCount = 0;
 
     usefulRefs.forEach((ref) => {
@@ -867,6 +871,7 @@ function markUnusedRowsAsSobra(usefulRefs, rows, pesqCol, dataPesquisaCol) {
         if (!currentPesq) {
             rows[ref.rowIndex][pesqCol] = SOBRA_LABEL;
             rows[ref.rowIndex][dataPesquisaCol] = "";
+            if (categoriaCol >= 0) rows[ref.rowIndex][categoriaCol] = SOBRA_LABEL;
             sobraCount += 1;
         }
     });
@@ -972,7 +977,6 @@ async function buildFinalRowRefs(rows, dataStartIndex, columnIndexes, diaPesqCol
 
         const pesqValue = String(row[columnIndexes.pesq] ?? "").trim();
         if (!pesqValue) continue;
-        if (pesqValue === SOBRA_LABEL) continue; // SOBRA não entra no arquivo final
 
         const diaPesqValue =
             diaPesqColIndex >= 0 ? getDisplayDate(row[diaPesqColIndex]) : "";
@@ -1213,7 +1217,6 @@ async function handleProcess() {
         addLog("Limpando colunas antigas de N° PESQ e DIA PESQ...", "ok");
         clearColumnsInRows(rows, dataStartIndex, [pesqCol, dataPesquisaCol]);
 
-        // Lê limites por categoria antes de processar (com log detalhado de cada input)
         const maxPerCategory = getMaxPerCategoryPerPesq();
         const activeLimits = Object.entries(maxPerCategory)
             .filter(([_, val]) => val > 0)
@@ -1240,8 +1243,9 @@ async function handleProcess() {
             });
         }
 
-        const sobraCount = markUnusedRowsAsSobra(usefulRefs, rows, pesqCol, dataPesquisaCol);
-        addLog(`Linhas marcadas como SOBRA: ${sobraCount} (ficam fora do arquivo final, só no log)`, sobraCount > 0 ? "ok" : "warn");
+        // SOBRA: grava no N° PESQ e também na CATEGORIA
+        const sobraCount = markUnusedRowsAsSobra(usefulRefs, rows, pesqCol, dataPesquisaCol, categoriaCol);
+        addLog(`Linhas marcadas como SOBRA: ${sobraCount}`, sobraCount > 0 ? "ok" : "warn");
 
         const finalHeaders = [
             "IDP",
@@ -1282,7 +1286,12 @@ async function handleProcess() {
             return;
         }
 
+        const sobraNoArquivo = finalRowRefs.filter(
+            (r) => r.pesqOrder === Number.MAX_SAFE_INTEGER - 1
+        ).length;
+
         addLog(`Linhas exportadas no arquivo final: ${finalRowRefs.length}`, "ok");
+        addLog(`Dessas, linhas de SOBRA dentro do arquivo: ${sobraNoArquivo}`, sobraNoArquivo > 0 ? "ok" : "warn");
         addLog("Gerando arquivo CSV final em blocos para economizar memória...", "ok");
 
         const csvText = await buildFinalCSVInChunks({
@@ -1293,7 +1302,7 @@ async function handleProcess() {
             diaPesqColIndex: dataPesquisaCol
         });
 
-        generatedFileName = `${safeFileName(baseFile.name)}_PREENCHIDO.csv`;
+        generatedFileName = `${safeFileName(baseFile.name)}_PREENCHIDO_${timestampSuffix()}.csv`;
         generatedBlob = new Blob([csvText], {
             type: "text/csv;charset=utf-8;",
         });
@@ -1366,12 +1375,6 @@ async function processWithoutCota({
         targets,
         { maxPerCategory }
     );
-
-    const totalRemaining = targets.reduce((sum, target) => sum + target.remaining, 0);
-    if (totalRemaining > 0) {
-        const maxPerP = computeMaxPerPByAvailable(usefulRefs.length, totalPesquisadores);
-        throw new Error(`O máximo de telefones por P são ${maxPerP} de acordo com a quantidade de linhas.`);
-    }
 
     const totalAtribuido = assignTargetsToSheet(targets, rows, pesqCol, dataPesquisaCol);
 
