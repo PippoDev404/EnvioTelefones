@@ -10,14 +10,6 @@ const cotaFileInput = document.querySelector("#cotaFile");
 const hasCotaSelect = document.querySelector("#hasCota");
 const maxNumbersPerPesqInput = document.querySelector("#maxNumbersPerPesq");
 
-// Inputs de limite por categoria
-const maxPesquisaPerPesqInput = document.querySelector("#maxPesquisaPerPesq");
-const maxVivoPerPesqInput = document.querySelector("#maxVivoPerPesq");
-const maxClaroPerPesqInput = document.querySelector("#maxClaroPerPesq");
-const maxOiPerPesqInput = document.querySelector("#maxOiPerPesq");
-const maxTimPerPesqInput = document.querySelector("#maxTimPerPesq");
-const maxBrasilPerPesqInput = document.querySelector("#maxBrasilPerPesq");
-
 const processBtn = document.querySelector("#processBtn");
 const downloadBtn = document.querySelector("#downloadBtn");
 
@@ -452,16 +444,50 @@ function getMaxNumbersPerPesq() {
     return value;
 }
 
+/* =========================
+   LIMITES POR CATEGORIA (À PROVA DE ERRO DE ID)
+========================= */
+
 function getMaxPerCategoryPerPesq() {
-    const categories = ["PESQUISA", "VIVO", "CLARO", "OI", "TIM", "BRASIL"];
+    // Mapa de todos os inputs da página, com id em lowercase (case-insensitive)
+    const idMap = new Map();
+    document.querySelectorAll("input").forEach((el) => {
+        if (el.id) idMap.set(el.id.toLowerCase(), el);
+    });
+
     const limits = {};
 
-    categories.forEach(cat => {
-        const input = document.querySelector(`#max${cat}PerPesq`);
-        const raw = input ? String(input.value).trim() : "";
+    CATEGORY_PRIORITY.forEach((cat) => {
+        const lowerCat = cat.toLowerCase();
+
+        // 1ª tentativa: id exato "max<categoria>perpesq" em qualquer caixa
+        // (casa com maxPesquisaPerPesq, maxPESQUISAPerPesq, maxpesquisaperpesq...)
+        let input = idMap.get(`max${lowerCat}perpesq`) || null;
+
+        // 2ª tentativa: qualquer id que contenha "max" + nome da categoria
+        if (!input) {
+            for (const [id, el] of idMap.entries()) {
+                if (id.includes("max") && id.includes(lowerCat)) {
+                    input = el;
+                    break;
+                }
+            }
+        }
+
+        if (!input) {
+            addLog(`Atenção: NÃO encontrei o input de limite da categoria ${cat}. Cole no chat o HTML desses campos.`, "warn");
+            limits[cat] = 0;
+            return;
+        }
+
+        const raw = String(input.value).trim();
         const value = raw === "" ? 0 : Number(raw);
-        // 0 ou negativo = ILIMITADO
-        limits[cat] = (Number.isFinite(value) && value > 0) ? Math.floor(value) : 0;
+        limits[cat] = Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+
+        addLog(
+            `Limite ${cat}: ${limits[cat] > 0 ? limits[cat] : "ilimitado (0)"} por P — lido do input #${input.id} (valor digitado: "${raw || "vazio"}").`,
+            "ok"
+        );
     });
 
     return limits;
@@ -946,6 +972,7 @@ async function buildFinalRowRefs(rows, dataStartIndex, columnIndexes, diaPesqCol
 
         const pesqValue = String(row[columnIndexes.pesq] ?? "").trim();
         if (!pesqValue) continue;
+        if (pesqValue === SOBRA_LABEL) continue; // SOBRA não entra no arquivo final
 
         const diaPesqValue =
             diaPesqColIndex >= 0 ? getDisplayDate(row[diaPesqColIndex]) : "";
@@ -1186,7 +1213,7 @@ async function handleProcess() {
         addLog("Limpando colunas antigas de N° PESQ e DIA PESQ...", "ok");
         clearColumnsInRows(rows, dataStartIndex, [pesqCol, dataPesquisaCol]);
 
-        // Lê limites por categoria antes de processar
+        // Lê limites por categoria antes de processar (com log detalhado de cada input)
         const maxPerCategory = getMaxPerCategoryPerPesq();
         const activeLimits = Object.entries(maxPerCategory)
             .filter(([_, val]) => val > 0)
@@ -1214,7 +1241,7 @@ async function handleProcess() {
         }
 
         const sobraCount = markUnusedRowsAsSobra(usefulRefs, rows, pesqCol, dataPesquisaCol);
-        addLog(`Linhas marcadas como SOBRA: ${sobraCount}`, sobraCount > 0 ? "ok" : "warn");
+        addLog(`Linhas marcadas como SOBRA: ${sobraCount} (ficam fora do arquivo final, só no log)`, sobraCount > 0 ? "ok" : "warn");
 
         const finalHeaders = [
             "IDP",
