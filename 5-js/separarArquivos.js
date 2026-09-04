@@ -4,7 +4,7 @@
 //  2) telefone
 //  3) data/hora com JANELA DE ±15 MIN (+ confirma agente quando disponível)
 //  4) agente (só se o arquivo não tiver data no nome)
-// Botões: Processar | encontrados (.zip) | NÃO encontrados (.csv) | fora da planilha (.zip)
+// Botões: Processar | encontrados (.zip) | NÃO encontrados (.csv) | por data/hora (.zip) | fora da planilha (.zip)
 import * as XLSX from "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm";
 import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
 
@@ -27,6 +27,7 @@ if (btnBaixarZip) btnBaixarZip.innerHTML = '<i class="fa-solid fa-file-zipper"><
 if (btnNaoEncontrados) btnNaoEncontrados.innerHTML = '<i class="fa-solid fa-file-csv"></i> Baixar NÃO encontrados (.csv)';
 
 let arquivosEncontrados = [];
+let arquivosEncontradosPorData = []; // NOVO: arquivos encontrados por data/hora
 let arquivosForaDaPlanilha = [];
 let estruturaPlanilha = null;
 let numerosEncontrados = new Set();
@@ -312,11 +313,14 @@ function buscarPorDataAgente(registrosData, tsArq, agArq) {
 /* ---------- ZIP genérico ---------- */
 
 async function baixarZipDe(arquivos, nomeZip, botao) {
-    if (!arquivos.length) return;
+    if (!arquivos.length) {
+        alert("⚠️ Nenhum arquivo para baixar!");
+        return;
+    }
 
     try {
         if (statusTexto) statusTexto.textContent = `Gerando ${nomeZip} (modo rápido)...`;
-        botao.disabled = true;
+        if (botao) botao.disabled = true;
 
         const zip = new JSZip();
         const usados = new Set();
@@ -348,11 +352,12 @@ async function baixarZipDe(arquivos, nomeZip, botao) {
         console.error(erro);
         if (statusTexto) statusTexto.textContent = "Erro ao gerar ZIP: " + erro.message;
     } finally {
+        if (botao) botao.disabled = false;
         atualizarBotoes();
     }
 }
 
-/* ---------- CSV dos NÃO ENCONTRADOS (SOLUÇÃO DEFINITIVA) ---------- */
+/* ---------- CSV dos NÃO ENCONTRADOS ---------- */
 
 function linhaTemMatch(row) {
     if (linhasEncontradas.has(row.sujeito)) return true;
@@ -381,27 +386,22 @@ function baixarPlanilhaRestante() {
             folha.rows.forEach((row, idx) => {
                 if (!row || !row.aoa) return;
 
-                // Verifica se tem dados
                 const temDados = row.aoa.some(celula => {
                     if (celula === null || celula === undefined) return false;
                     return String(celula).trim() !== "";
                 });
 
                 if (!temDados) return;
-
-                // Se não for o cabeçalho (idx 0) e já foi encontrada, ignora
                 if (idx > 0 && linhaTemMatch(row)) return;
 
-                // Converte linha para formato CSV seguro
                 const linhaCSV = row.aoa.map(celula => {
                     if (celula === null || celula === undefined) return '""';
                     
                     let str = String(celula);
-                    // Escapa aspas duplas e remove quebras de linha que quebram o CSV
                     str = str.replace(/"/g, '""').replace(/[\n\r]+/g, ' ').trim();
                     
                     return `"${str}"`;
-                }).join(";"); // Ponto e vírgula é o padrão que o Excel BR abre direto
+                }).join(";");
 
                 csvContent += linhaCSV + "\r\n";
                 if (idx > 0) totalExportado++;
@@ -409,12 +409,11 @@ function baixarPlanilhaRestante() {
         }
 
         if (totalExportado === 0) {
-            alert("⚠️ Nenhuma linha restante para exportar!");
+            alert("️ Nenhuma linha restante para exportar!");
             if (statusTexto) statusTexto.textContent = "Nenhuma linha restante para exportar.";
             return;
         }
 
-        // Adiciona BOM (\ufeff) para o Excel reconhecer UTF-8 e acentos corretamente
         const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -455,12 +454,33 @@ if (!btnFora) {
     );
 }
 
+/* ---------- NOVO: 5º botão para encontrados por data/hora ---------- */
+
+let btnEncontradosPorData = document.getElementById("btnEncontradosPorData");
+if (!btnEncontradosPorData) {
+    const containerAcoes =
+        document.querySelector(".acoesSeparar") ||
+        btnProcessar?.parentElement ||
+        document.body;
+
+    btnEncontradosPorData = document.createElement("button");
+    btnEncontradosPorData.id = "btnEncontradosPorData";
+    btnEncontradosPorData.className = "botaoTerciario";
+    btnEncontradosPorData.innerHTML = '<i class="fa-solid fa-clock"></i> Baixar encontrados por data/hora (.zip)';
+    btnEncontradosPorData.disabled = true;
+    containerAcoes.appendChild(btnEncontradosPorData);
+    btnEncontradosPorData.addEventListener("click", () =>
+        baixarZipDe(arquivosEncontradosPorData, "encontrados_por_data_hora.zip", btnEncontradosPorData)
+    );
+}
+
 /* ---------- estado dos botões ---------- */
 
 function atualizarBotoes() {
     if (btnBaixarZip) btnBaixarZip.disabled = arquivosEncontrados.length === 0;
     if (btnNaoEncontrados) btnNaoEncontrados.disabled = linhasRestantes === 0;
     if (btnFora) btnFora.disabled = arquivosForaDaPlanilha.length === 0;
+    if (btnEncontradosPorData) btnEncontradosPorData.disabled = arquivosEncontradosPorData.length === 0;
 }
 
 atualizarBotoes();
@@ -515,6 +535,7 @@ inputDocumento?.addEventListener("change", () => {
 btnProcessar?.addEventListener("click", async () => {
     if (listaResultado) listaResultado.innerHTML = "";
     arquivosEncontrados = [];
+    arquivosEncontradosPorData = []; // NOVO: reseta o array
     arquivosForaDaPlanilha = [];
     numerosEncontrados = new Set();
     linhasEncontradas = new Set();
@@ -595,7 +616,10 @@ btnProcessar?.addEventListener("click", async () => {
             if (evidencia) {
                 if (regra === "protocolo") cProto++;
                 if (regra === "tel") { cTel++; numerosEncontrados.add(evidencia.numeroPlanilha); }
-                if (regra === "data") cData++;
+                if (regra === "data") {
+                    cData++;
+                    arquivosEncontradosPorData.push(f); // NOVO: salva separadamente
+                }
                 if (regra === "agente") cAgente++;
                 linhasEncontradas.add(evidencia.sujeito);
                 achados.push({ file: f, nome: f.webkitRelativePath || f.name, ...evidencia });
