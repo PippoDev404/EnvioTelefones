@@ -1,8 +1,9 @@
 // 5-js/separarArquivos.js
-// Match por 3 chaves (em ordem):
-//  1) telefone
-//  2) data/hora com JANELA DE ±15 MIN (+ confirma agente quando disponível)
-//  3) agente (só se o arquivo não tiver data no nome)
+// Match por 4 chaves (em ordem):
+//  1) protocolo (novo!)
+//  2) telefone
+//  3) data/hora com JANELA DE ±15 MIN (+ confirma agente quando disponível)
+//  4) agente (só se o arquivo não tiver data no nome)
 // Botões: Processar | encontrados (.zip) | NÃO encontrados (.xlsx) | fora da planilha (.zip)
 import * as XLSX from "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm";
 import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
@@ -169,12 +170,20 @@ function ehColunaAgente(cabecalho) {
     return String(cabecalho ?? "").toUpperCase().includes("AGENTE");
 }
 
+/* ---------- NOVO: protocolo ---------- */
+
+function ehColunaProtocolo(cabecalho) {
+    const t = String(cabecalho ?? "").trim().toLowerCase();
+    return t === "protocolo" || t.includes("protocolo");
+}
+
 /* ---------- lê a planilha ---------- */
 
 async function lerPlanilha(file) {
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: "array", raw: true, cellDates: true });
     const mapaBase = new Map();
+    const mapaProtocolo = new Map(); // NOVO: mapa de protocolos
     const ocorrencias = new Map();
     const registrosData = []; // { ts, agente, sujeito }
     const agentesPlanilha = [];
@@ -192,17 +201,30 @@ async function lerPlanilha(file) {
         const colunasTelefone = [];
         let colunaData = -1;
         let colunaAgente = -1;
+        let colunaProtocolo = -1; // NOVO
 
         linhas[0].forEach((c, i) => {
             if (ehColunaTelefone(c)) colunasTelefone.push(i);
             if (colunaData < 0 && ehColunaData(c)) colunaData = i;
             if (colunaAgente < 0 && ehColunaAgente(c)) colunaAgente = i;
+            if (colunaProtocolo < 0 && ehColunaProtocolo(c)) colunaProtocolo = i; // NOVO
         });
 
         const rows = [];
 
         linhas.forEach((linha, idxLinha) => {
             const sujeito = limpar(sequenciasDe(String(linha[0] ?? "")).join(""));
+
+            // NOVO: extrair protocolo
+            if (colunaProtocolo >= 0) {
+                const proto = textoDaCelula(linha[colunaProtocolo]).replace(/\D/g, "");
+                if (proto && proto.length >= 4) {
+                    const protoLimpo = limpar(proto);
+                    if (!mapaProtocolo.has(protoLimpo)) {
+                        mapaProtocolo.set(protoLimpo, sujeito);
+                    }
+                }
+            }
 
             const celulasAlvo = colunasTelefone.length
                 ? colunasTelefone.map((i) => linha[i])
@@ -256,6 +278,7 @@ async function lerPlanilha(file) {
 
     return {
         mapaVariante,
+        mapaProtocolo, // NOVO
         registrosData,
         agentesPlanilha,
         folhas,
@@ -419,7 +442,7 @@ function mostrarDiagnostico(amostraPlanilha, nao, duplicados) {
     const fora = nao.slice(0, 8).map((n) => `${n.nome} → [${n.numeros.join(", ") || "sem números"}]`);
 
     box.innerHTML =
-        `<strong>🔎 Conferência:</strong><br>` +
+        `<strong> Conferência:</strong><br>` +
         `Exemplos de números lidos das colunas de telefone: ${amostraPlanilha.join(", ") || "— (nessa planilha o match foi por data/hora ou agente)"}` +
         (duplicados.length
             ? `<br><br><strong>⚠️ Números duplicados (${duplicados.length}):</strong><br>` +
@@ -429,7 +452,7 @@ function mostrarDiagnostico(amostraPlanilha, nao, duplicados) {
             : "") +
         (nao.length
             ? `<br><br><strong>Arquivos da pasta que NÃO estão na planilha (${nao.length}):</strong><br>` + fora.join("<br>") +
-            (nao.length > 8 ? "<br>… (baixe o ZIP “fora da planilha” pra levar todos)" : "")
+            (nao.length > 8 ? "<br>… (baixe o ZIP 'fora da planilha' pra levar todos)" : "")
             : "<br><br>Todos os arquivos da pasta bateram com a planilha. ✅");
 }
 
@@ -468,40 +491,55 @@ btnProcessar?.addEventListener("click", async () => {
         if (!arquivos.length) throw new Error("Selecione a pasta com os arquivos.");
         if (!documento) throw new Error("Selecione o Excel ou CSV com os números.");
 
-        const { mapaVariante, registrosData, agentesPlanilha, folhas, totalUnicos, totalRegistros, duplicados } =
+        const { mapaVariante, mapaProtocolo, registrosData, agentesPlanilha, folhas, totalUnicos, totalRegistros, duplicados } =
             await lerPlanilha(documento);
 
-        if (!mapaVariante.size && !registrosData.length && !agentesPlanilha.length) {
-            throw new Error("Planilha sem telefone, sem data e sem agente — nada pra comparar.");
+        if (!mapaVariante.size && !mapaProtocolo.size && !registrosData.length && !agentesPlanilha.length) {
+            throw new Error("Planilha sem telefone, sem protocolo, sem data e sem agente — nada pra comparar.");
         }
 
         estruturaPlanilha = folhas;
 
         const achados = [];
         const nao = [];
-        let cTel = 0, cData = 0, cAgente = 0;
+        let cProto = 0, cTel = 0, cData = 0, cAgente = 0; // NOVO: cProto
 
         for (const f of arquivos) {
             const numsArquivo = extrairNumerosDe(f.name);
+            
+            // NOVO: extrair protocolo do nome do arquivo (números de qualquer tamanho)
+            const protoArquivo = String(f.name).match(/(\d+)/)?.[1] || null;
+            
             const tsArq = tsMinutosDoArquivo(f.name);
             const agArq = infoAgenteDoArquivo(f.name);
             let evidencia = null;
             let regra = "";
 
-            // 1) telefone
-            for (const n of numsArquivo) {
-                for (const v of variantes(n)) {
-                    const hit = mapaVariante.get(v);
-                    if (hit) {
-                        evidencia = { numeroArquivo: n, numeroPlanilha: hit.numero, sujeito: hit.sujeito };
-                        regra = "tel";
-                        break;
-                    }
+            // 1) protocolo (NOVO - PRIORIDADE MÁXIMA)
+            if (!evidencia && mapaProtocolo.size > 0 && protoArquivo) {
+                const hit = mapaProtocolo.get(protoArquivo);
+                if (hit) {
+                    evidencia = { numeroArquivo: protoArquivo, numeroPlanilha: protoArquivo, sujeito: hit };
+                    regra = "protocolo";
                 }
-                if (evidencia) break;
             }
 
-            // 2) data/hora com tolerância (+ agente confirmando)
+            // 2) telefone
+            if (!evidencia) {
+                for (const n of numsArquivo) {
+                    for (const v of variantes(n)) {
+                        const hit = mapaVariante.get(v);
+                        if (hit) {
+                            evidencia = { numeroArquivo: n, numeroPlanilha: hit.numero, sujeito: hit.sujeito };
+                            regra = "tel";
+                            break;
+                        }
+                    }
+                    if (evidencia) break;
+                }
+            }
+
+            // 3) data/hora com tolerância (+ agente confirmando)
             if (!evidencia) {
                 const hit = buscarPorDataAgente(registrosData, tsArq, agArq);
                 if (hit) {
@@ -510,7 +548,7 @@ btnProcessar?.addEventListener("click", async () => {
                 }
             }
 
-            // 3) agente (só se o arquivo NÃO tem data no nome)
+            // 4) agente (só se o arquivo NÃO tem data no nome)
             if (!evidencia && tsArq === null && agArq) {
                 const hit = agentesPlanilha.find((a) => agenteBate(a, agArq) && (a.nomeSo || a.numero));
                 if (hit) {
@@ -520,6 +558,7 @@ btnProcessar?.addEventListener("click", async () => {
             }
 
             if (evidencia) {
+                if (regra === "protocolo") { cProto++; }
                 if (regra === "tel") { cTel++; numerosEncontrados.add(evidencia.numeroPlanilha); }
                 if (regra === "data") cData++;
                 if (regra === "agente") cAgente++;
@@ -530,10 +569,15 @@ btnProcessar?.addEventListener("click", async () => {
             }
         }
 
+        // CORREÇÃO: ignorar linhas vazias na contagem
         linhasRestantes = 0;
         for (const folha of estruturaPlanilha) {
             folha.rows.forEach((row, idx) => {
-                if (idx > 0 && !linhaTemMatch(row)) linhasRestantes++;
+                if (idx > 0) {
+                    // só conta se a linha tiver algum dado
+                    const temDados = row.aoa.some(celula => celula !== "" && celula !== null && celula !== undefined);
+                    if (temDados && !linhaTemMatch(row)) linhasRestantes++;
+                }
             });
         }
 
@@ -544,7 +588,7 @@ btnProcessar?.addEventListener("click", async () => {
         if (statusTexto) {
             statusTexto.textContent =
                 `Concluído. Registros na planilha: ${totalRegistros}. ` +
-                `Encontrados: ${achados.length} (telefone: ${cTel} • data/hora ±${TOLERANCIA_MIN}min: ${cData} • agente: ${cAgente}) • ` +
+                `Encontrados: ${achados.length} (protocolo: ${cProto} • telefone: ${cTel} • data/hora ±${TOLERANCIA_MIN}min: ${cData} • agente: ${cAgente}) • ` +
                 `Fora da planilha: ${nao.length} • Linhas restantes: ${linhasRestantes}.`;
         }
 
