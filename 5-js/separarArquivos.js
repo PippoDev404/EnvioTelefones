@@ -373,17 +373,38 @@ function baixarPlanilhaRestante() {
 
         for (const folha of estruturaPlanilha) {
             const aoa = [];
+            let linhaHeader = null;
 
             folha.rows.forEach((row, idx) => {
                 if (idx === 0) {
-                    aoa.push(row.aoa);
+                    linhaHeader = row.aoa;
                     return;
                 }
-                if (!linhaTemMatch(row)) aoa.push(row.aoa);
+                
+                // só processa linhas com dados reais
+                const temDados = row.aoa.some(celula => 
+                    celula !== "" && celula !== null && celula !== undefined && String(celula).trim() !== ""
+                );
+                
+                if (temDados && !linhaTemMatch(row)) {
+                    aoa.push(row.aoa);
+                }
             });
 
-            const ws = XLSX.utils.aoa_to_sheet(aoa);
-            XLSX.utils.book_append_sheet(wb, ws, folha.nome.slice(0, 31));
+            // só cria a aba se tiver dados
+            if (aoa.length > 0 && linhaHeader) {
+                const dadosComHeader = [linhaHeader, ...aoa];
+                const ws = XLSX.utils.aoa_to_sheet(dadosComHeader);
+                XLSX.utils.book_append_sheet(wb, ws, folha.nome.slice(0, 31));
+            }
+        }
+
+        // só gera o arquivo se tiver alguma aba
+        if (wb.SheetNames.length === 0) {
+            if (statusTexto) {
+                statusTexto.textContent = "Todos os registros foram encontrados! Nenhuma linha restante.";
+            }
+            return;
         }
 
         XLSX.writeFile(wb, "planilha_nao_encontrados.xlsx");
@@ -442,7 +463,7 @@ function mostrarDiagnostico(amostraPlanilha, nao, duplicados) {
     const fora = nao.slice(0, 8).map((n) => `${n.nome} → [${n.numeros.join(", ") || "sem números"}]`);
 
     box.innerHTML =
-        `<strong> Conferência:</strong><br>` +
+        `<strong>🔎 Conferência:</strong><br>` +
         `Exemplos de números lidos das colunas de telefone: ${amostraPlanilha.join(", ") || "— (nessa planilha o match foi por data/hora ou agente)"}` +
         (duplicados.length
             ? `<br><br><strong>⚠️ Números duplicados (${duplicados.length}):</strong><br>` +
