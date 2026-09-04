@@ -4,7 +4,7 @@
 //  2) telefone
 //  3) data/hora com JANELA DE ±15 MIN (+ confirma agente quando disponível)
 //  4) agente (só se o arquivo não tiver data no nome)
-// Botões: Processar | encontrados (.zip) | NÃO encontrados (.xlsx) | fora da planilha (.zip)
+// Botões: Processar | encontrados (.zip) | NÃO encontrados (.csv) | fora da planilha (.zip)
 import * as XLSX from "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm";
 import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
 
@@ -24,7 +24,7 @@ const statusTexto = document.getElementById("statusTexto");
 const listaResultado = document.getElementById("listaResultado");
 
 if (btnBaixarZip) btnBaixarZip.innerHTML = '<i class="fa-solid fa-file-zipper"></i> Baixar encontrados (.zip)';
-if (btnNaoEncontrados) btnNaoEncontrados.innerHTML = '<i class="fa-solid fa-file-excel"></i> Baixar NÃO encontrados (.xlsx)';
+if (btnNaoEncontrados) btnNaoEncontrados.innerHTML = '<i class="fa-solid fa-file-csv"></i> Baixar NÃO encontrados (.csv)';
 
 let arquivosEncontrados = [];
 let arquivosForaDaPlanilha = [];
@@ -123,7 +123,7 @@ function infoAgenteDoArquivo(nome) {
 }
 
 function agenteBate(a, b) {
-    if (!a || !b) return true; // se um lado não tem agente, não bloqueia
+    if (!a || !b) return true;
     return (
         (a.numero && b.numero && a.numero === b.numero) ||
         (a.nomeSo && b.nomeSo && (a.nomeSo.includes(b.nomeSo) || b.nomeSo.includes(a.nomeSo)))
@@ -170,7 +170,7 @@ function ehColunaAgente(cabecalho) {
     return String(cabecalho ?? "").toUpperCase().includes("AGENTE");
 }
 
-/* ---------- NOVO: protocolo ---------- */
+/* ---------- protocolo ---------- */
 
 function ehColunaProtocolo(cabecalho) {
     const t = String(cabecalho ?? "").trim().toLowerCase();
@@ -183,9 +183,9 @@ async function lerPlanilha(file) {
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: "array", raw: true, cellDates: true });
     const mapaBase = new Map();
-    const mapaProtocolo = new Map(); // NOVO: mapa de protocolos
+    const mapaProtocolo = new Map();
     const ocorrencias = new Map();
-    const registrosData = []; // { ts, agente, sujeito }
+    const registrosData = [];
     const agentesPlanilha = [];
     const folhas = [];
     let totalRegistros = 0;
@@ -201,13 +201,13 @@ async function lerPlanilha(file) {
         const colunasTelefone = [];
         let colunaData = -1;
         let colunaAgente = -1;
-        let colunaProtocolo = -1; // NOVO
+        let colunaProtocolo = -1;
 
         linhas[0].forEach((c, i) => {
             if (ehColunaTelefone(c)) colunasTelefone.push(i);
             if (colunaData < 0 && ehColunaData(c)) colunaData = i;
             if (colunaAgente < 0 && ehColunaAgente(c)) colunaAgente = i;
-            if (colunaProtocolo < 0 && ehColunaProtocolo(c)) colunaProtocolo = i; // NOVO
+            if (colunaProtocolo < 0 && ehColunaProtocolo(c)) colunaProtocolo = i;
         });
 
         const rows = [];
@@ -215,7 +215,6 @@ async function lerPlanilha(file) {
         linhas.forEach((linha, idxLinha) => {
             const sujeito = limpar(sequenciasDe(String(linha[0] ?? "")).join(""));
 
-            // NOVO: extrair protocolo
             if (colunaProtocolo >= 0) {
                 const proto = textoDaCelula(linha[colunaProtocolo]).replace(/\D/g, "");
                 if (proto && proto.length >= 4) {
@@ -278,7 +277,7 @@ async function lerPlanilha(file) {
 
     return {
         mapaVariante,
-        mapaProtocolo, // NOVO
+        mapaProtocolo,
         registrosData,
         agentesPlanilha,
         folhas,
@@ -310,7 +309,7 @@ function buscarPorDataAgente(registrosData, tsArq, agArq) {
     return melhor;
 }
 
-/* ---------- ZIP genérico (STORE = rápido) ---------- */
+/* ---------- ZIP genérico ---------- */
 
 async function baixarZipDe(arquivos, nomeZip, botao) {
     if (!arquivos.length) return;
@@ -353,7 +352,7 @@ async function baixarZipDe(arquivos, nomeZip, botao) {
     }
 }
 
-/* ---------- EXCEL dos NÃO ENCONTRADOS ---------- */
+/* ---------- CSV dos NÃO ENCONTRADOS (SOLUÇÃO DEFINITIVA) ---------- */
 
 function linhaTemMatch(row) {
     if (linhasEncontradas.has(row.sujeito)) return true;
@@ -364,57 +363,75 @@ function linhaTemMatch(row) {
 }
 
 function baixarPlanilhaRestante() {
-    if (!estruturaPlanilha) return;
+    if (!estruturaPlanilha) {
+        console.error("❌ estruturaPlanilha é nula!");
+        return;
+    }
 
     try {
-        if (statusTexto) statusTexto.textContent = "Gerando planilha restante...";
+        if (statusTexto) statusTexto.textContent = "Gerando arquivo CSV...";
+        console.log("🔍 INICIANDO EXPORTAÇÃO CSV");
 
-        const wb = XLSX.utils.book_new();
+        let csvContent = "";
+        let totalExportado = 0;
 
         for (const folha of estruturaPlanilha) {
-            const aoa = [];
-            let linhaHeader = null;
-
+            console.log(`📄 Processando folha: ${folha.nome}`);
+            
             folha.rows.forEach((row, idx) => {
-                if (idx === 0) {
-                    linhaHeader = row.aoa;
-                    return;
-                }
-                
-                // só processa linhas com dados reais
-                const temDados = row.aoa.some(celula => 
-                    celula !== "" && celula !== null && celula !== undefined && String(celula).trim() !== ""
-                );
-                
-                if (temDados && !linhaTemMatch(row)) {
-                    aoa.push(row.aoa);
-                }
-            });
+                if (!row || !row.aoa) return;
 
-            // só cria a aba se tiver dados
-            if (aoa.length > 0 && linhaHeader) {
-                const dadosComHeader = [linhaHeader, ...aoa];
-                const ws = XLSX.utils.aoa_to_sheet(dadosComHeader);
-                XLSX.utils.book_append_sheet(wb, ws, folha.nome.slice(0, 31));
-            }
+                // Verifica se tem dados
+                const temDados = row.aoa.some(celula => {
+                    if (celula === null || celula === undefined) return false;
+                    return String(celula).trim() !== "";
+                });
+
+                if (!temDados) return;
+
+                // Se não for o cabeçalho (idx 0) e já foi encontrada, ignora
+                if (idx > 0 && linhaTemMatch(row)) return;
+
+                // Converte linha para formato CSV seguro
+                const linhaCSV = row.aoa.map(celula => {
+                    if (celula === null || celula === undefined) return '""';
+                    
+                    let str = String(celula);
+                    // Escapa aspas duplas e remove quebras de linha que quebram o CSV
+                    str = str.replace(/"/g, '""').replace(/[\n\r]+/g, ' ').trim();
+                    
+                    return `"${str}"`;
+                }).join(";"); // Ponto e vírgula é o padrão que o Excel BR abre direto
+
+                csvContent += linhaCSV + "\r\n";
+                if (idx > 0) totalExportado++;
+            });
         }
 
-        // só gera o arquivo se tiver alguma aba
-        if (wb.SheetNames.length === 0) {
-            if (statusTexto) {
-                statusTexto.textContent = "Todos os registros foram encontrados! Nenhuma linha restante.";
-            }
+        if (totalExportado === 0) {
+            alert("⚠️ Nenhuma linha restante para exportar!");
+            if (statusTexto) statusTexto.textContent = "Nenhuma linha restante para exportar.";
             return;
         }
 
-        XLSX.writeFile(wb, "planilha_nao_encontrados.xlsx");
+        // Adiciona BOM (\ufeff) para o Excel reconhecer UTF-8 e acentos corretamente
+        const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "planilha_nao_encontrados.csv";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
 
+        console.log(`✅ CSV gerado com sucesso: ${totalExportado} linhas`);
         if (statusTexto) {
-            statusTexto.textContent = `Planilha restante baixada: ${linhasRestantes} linha(s) sem áudio encontrado.`;
+            statusTexto.textContent = `✅ CSV baixado com ${totalExportado} linha(s)!`;
         }
     } catch (erro) {
-        console.error(erro);
-        if (statusTexto) statusTexto.textContent = "Erro ao gerar planilha: " + erro.message;
+        console.error("❌ ERRO FATAL:", erro);
+        alert("Erro ao gerar arquivo: " + erro.message);
     }
 }
 
@@ -523,20 +540,17 @@ btnProcessar?.addEventListener("click", async () => {
 
         const achados = [];
         const nao = [];
-        let cProto = 0, cTel = 0, cData = 0, cAgente = 0; // NOVO: cProto
+        let cProto = 0, cTel = 0, cData = 0, cAgente = 0;
 
         for (const f of arquivos) {
             const numsArquivo = extrairNumerosDe(f.name);
-            
-            // NOVO: extrair protocolo do nome do arquivo (números de qualquer tamanho)
             const protoArquivo = String(f.name).match(/(\d+)/)?.[1] || null;
-            
             const tsArq = tsMinutosDoArquivo(f.name);
             const agArq = infoAgenteDoArquivo(f.name);
             let evidencia = null;
             let regra = "";
 
-            // 1) protocolo (NOVO - PRIORIDADE MÁXIMA)
+            // 1) protocolo
             if (!evidencia && mapaProtocolo.size > 0 && protoArquivo) {
                 const hit = mapaProtocolo.get(protoArquivo);
                 if (hit) {
@@ -560,7 +574,7 @@ btnProcessar?.addEventListener("click", async () => {
                 }
             }
 
-            // 3) data/hora com tolerância (+ agente confirmando)
+            // 3) data/hora
             if (!evidencia) {
                 const hit = buscarPorDataAgente(registrosData, tsArq, agArq);
                 if (hit) {
@@ -569,7 +583,7 @@ btnProcessar?.addEventListener("click", async () => {
                 }
             }
 
-            // 4) agente (só se o arquivo NÃO tem data no nome)
+            // 4) agente
             if (!evidencia && tsArq === null && agArq) {
                 const hit = agentesPlanilha.find((a) => agenteBate(a, agArq) && (a.nomeSo || a.numero));
                 if (hit) {
@@ -579,7 +593,7 @@ btnProcessar?.addEventListener("click", async () => {
             }
 
             if (evidencia) {
-                if (regra === "protocolo") { cProto++; }
+                if (regra === "protocolo") cProto++;
                 if (regra === "tel") { cTel++; numerosEncontrados.add(evidencia.numeroPlanilha); }
                 if (regra === "data") cData++;
                 if (regra === "agente") cAgente++;
@@ -590,13 +604,17 @@ btnProcessar?.addEventListener("click", async () => {
             }
         }
 
-        // CORREÇÃO: ignorar linhas vazias na contagem
         linhasRestantes = 0;
         for (const folha of estruturaPlanilha) {
             folha.rows.forEach((row, idx) => {
                 if (idx > 0) {
-                    // só conta se a linha tiver algum dado
-                    const temDados = row.aoa.some(celula => celula !== "" && celula !== null && celula !== undefined);
+                    if (!row || !row.aoa) return;
+                    
+                    const temDados = row.aoa.some(celula => {
+                        if (celula === null || celula === undefined) return false;
+                        return String(celula).trim() !== "";
+                    });
+                    
                     if (temDados && !linhaTemMatch(row)) linhasRestantes++;
                 }
             });
