@@ -4,7 +4,7 @@
 //  2) telefone
 //  3) data/hora com JANELA DE ±15 MIN (+ confirma agente quando disponível)
 //  4) agente (só se o arquivo não tiver data no nome)
-// Botões: Processar | encontrados (.zip) | NÃO encontrados (.csv) | por data/hora (.zip) | fora da planilha (.zip)
+// Botões: Processar | encontrados (.zip em lotes de 50) | encontrados (.csv) | NÃO encontrados (.csv) | por data/hora (.zip) | fora da planilha (.zip)
 import * as XLSX from "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm";
 import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
 
@@ -310,7 +310,7 @@ function buscarPorDataAgente(registrosData, tsArq, agArq) {
     return melhor;
 }
 
-/* ---------- ZIP genérico ---------- */
+/* ---------- ZIP genérico (usado pelos outros botões) ---------- */
 
 async function baixarZipDe(arquivos, nomeZip, botao) {
     if (!arquivos.length) {
@@ -354,6 +354,126 @@ async function baixarZipDe(arquivos, nomeZip, botao) {
     } finally {
         if (botao) botao.disabled = false;
         atualizarBotoes();
+    }
+}
+
+/* ---------- ZIP EM LOTES (pastas de 50 arquivos) ---------- */
+
+async function baixarZipEmLotes(arquivos, nomeZip, botao, tamanhoLote = 50) {
+    if (!arquivos.length) {
+        alert("⚠️ Nenhum arquivo para baixar!");
+        return;
+    }
+
+    try {
+        if (statusTexto) statusTexto.textContent = `Gerando ${nomeZip} em lotes de ${tamanhoLote}...`;
+        if (botao) botao.disabled = true;
+
+        const zip = new JSZip();
+        const nomesBaseUsados = new Set(); // Para evitar arquivos com nomes duplicados
+
+        for (let i = 0; i < arquivos.length; i++) {
+            // Calcula em qual pasta (lote) o arquivo deve entrar
+            const loteIndex = Math.floor(i / tamanhoLote) + 1;
+            const nomePasta = `lote_${String(loteIndex).padStart(2, '0')}`; // Ex: lote_01, lote_02
+            const pastaLote = zip.folder(nomePasta);
+            
+            const file = arquivos[i];
+            let nomeFinal = file.name;
+            
+            // Lógica de nomes únicos (evita sobrescrever arquivos com mesmo nome)
+            let contador = 1;
+            while (nomesBaseUsados.has(nomeFinal)) {
+                const ponto = file.name.lastIndexOf(".");
+                nomeFinal = ponto > 0
+                    ? `${file.name.slice(0, ponto)} (${contador})${file.name.slice(ponto)}`
+                    : `${file.name} (${contador})`;
+                contador++;
+            }
+            nomesBaseUsados.add(nomeFinal);
+            
+            // Adiciona o arquivo dentro da pasta do lote
+            pastaLote.file(nomeFinal, file);
+        }
+
+        const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = nomeZip;
+        link.click();
+        URL.revokeObjectURL(url);
+
+        const totalLotes = Math.ceil(arquivos.length / tamanhoLote);
+        if (statusTexto) {
+            statusTexto.textContent = `✅ ${nomeZip} baixado: ${arquivos.length} arquivo(s) dividido(s) em ${totalLotes} pasta(s).`;
+        }
+    } catch (erro) {
+        console.error(erro);
+        if (statusTexto) statusTexto.textContent = "Erro ao gerar ZIP em lotes: " + erro.message;
+    } finally {
+        if (botao) botao.disabled = false;
+        atualizarBotoes();
+    }
+}
+
+/* ---------- CSV dos ENCONTRADOS ---------- */
+
+function baixarEncontradosCSV() {
+    if (!ultimoResultado.achados || !ultimoResultado.achados.length) {
+        alert("⚠️ Nenhum arquivo encontrado para exportar!");
+        return;
+    }
+
+    try {
+        if (statusTexto) statusTexto.textContent = "Gerando CSV dos encontrados...";
+
+        // Cabeçalho do CSV
+        const cabecalho = [
+            "Nome do Arquivo",
+            "Regra de Match",
+            "Identificador no Arquivo",
+            "Identificador na Planilha",
+            "Sujeito (ID da linha)"
+        ];
+
+        const linhas = [cabecalho.map(c => `"${c}"`).join(";")];
+
+        for (const achado of ultimoResultado.achados) {
+            const linha = [
+                achado.nome || "",
+                achado.regra || "",
+                achado.numeroArquivo || "",
+                achado.numeroPlanilha || "",
+                achado.sujeito || ""
+            ];
+
+            const linhaCSV = linha.map(celula => {
+                let str = String(celula ?? "");
+                str = str.replace(/"/g, '""').replace(/[\n\r]+/g, ' ').trim();
+                return `"${str}"`;
+            }).join(";");
+
+            linhas.push(linhaCSV);
+        }
+
+        const csvContent = linhas.join("\r\n");
+        const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "arquivos_encontrados.csv";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        if (statusTexto) {
+            statusTexto.textContent = `✅ CSV dos encontrados baixado com ${ultimoResultado.achados.length} linha(s)!`;
+        }
+    } catch (erro) {
+        console.error("❌ ERRO ao gerar CSV dos encontrados:", erro);
+        alert("Erro ao gerar arquivo: " + erro.message);
     }
 }
 
@@ -474,10 +594,29 @@ if (!btnEncontradosPorData) {
     );
 }
 
+/* ---------- NOVO: 6º botão para CSV dos ENCONTRADOS ---------- */
+
+let btnEncontradosCSV = document.getElementById("btnEncontradosCSV");
+if (!btnEncontradosCSV) {
+    const containerAcoes =
+        document.querySelector(".acoesSeparar") ||
+        btnProcessar?.parentElement ||
+        document.body;
+
+    btnEncontradosCSV = document.createElement("button");
+    btnEncontradosCSV.id = "btnEncontradosCSV";
+    btnEncontradosCSV.className = "botaoTerciario";
+    btnEncontradosCSV.innerHTML = '<i class="fa-solid fa-file-csv"></i> Baixar encontrados (.csv)';
+    btnEncontradosCSV.disabled = true;
+    containerAcoes.appendChild(btnEncontradosCSV);
+    btnEncontradosCSV.addEventListener("click", baixarEncontradosCSV);
+}
+
 /* ---------- estado dos botões ---------- */
 
 function atualizarBotoes() {
     if (btnBaixarZip) btnBaixarZip.disabled = arquivosEncontrados.length === 0;
+    if (btnEncontradosCSV) btnEncontradosCSV.disabled = !ultimoResultado.achados || ultimoResultado.achados.length === 0;
     if (btnNaoEncontrados) btnNaoEncontrados.disabled = linhasRestantes === 0;
     if (btnFora) btnFora.disabled = arquivosForaDaPlanilha.length === 0;
     if (btnEncontradosPorData) btnEncontradosPorData.disabled = arquivosEncontradosPorData.length === 0;
@@ -622,7 +761,7 @@ btnProcessar?.addEventListener("click", async () => {
                 }
                 if (regra === "agente") cAgente++;
                 linhasEncontradas.add(evidencia.sujeito);
-                achados.push({ file: f, nome: f.webkitRelativePath || f.name, ...evidencia });
+                achados.push({ file: f, nome: f.webkitRelativePath || f.name, regra, ...evidencia });
             } else {
                 nao.push({ file: f, nome: f.webkitRelativePath || f.name, numeros: numsArquivo });
             }
@@ -670,7 +809,7 @@ btnProcessar?.addEventListener("click", async () => {
 });
 
 btnBaixarZip?.addEventListener("click", () =>
-    baixarZipDe(arquivosEncontrados, "arquivos_encontrados.zip", btnBaixarZip)
+    baixarZipEmLotes(arquivosEncontrados, "arquivos_encontrados.zip", btnBaixarZip, 50)
 );
 
 btnNaoEncontrados?.addEventListener("click", baixarPlanilhaRestante);
