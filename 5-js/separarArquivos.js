@@ -2,8 +2,8 @@
 // Match por 4 chaves (em ordem):
 //  1) protocolo (novo!)
 //  2) telefone
-//  3) data/hora com JANELA DE ±15 MIN (+ confirma agente quando disponível)
-//  4) agente (só se o arquivo não tiver data no nome)
+//  3) data/hora com JANELA DE ±30 MIN (+ confirma agente quando disponível)
+//  4) agente (fallback quando as outras regras falham)
 // Botões: Processar | encontrados (.zip em lotes de 50) | encontrados (.csv) | NÃO encontrados (.csv) | por data/hora (.zip) | fora da planilha (.zip)
 import * as XLSX from "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm";
 import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
@@ -27,7 +27,7 @@ if (btnBaixarZip) btnBaixarZip.innerHTML = '<i class="fa-solid fa-file-zipper"><
 if (btnNaoEncontrados) btnNaoEncontrados.innerHTML = '<i class="fa-solid fa-file-csv"></i> Baixar NÃO encontrados (.csv)';
 
 let arquivosEncontrados = [];
-let arquivosEncontradosPorData = []; // NOVO: arquivos encontrados por data/hora
+let arquivosEncontradosPorData = [];
 let arquivosForaDaPlanilha = [];
 let estruturaPlanilha = null;
 let numerosEncontrados = new Set();
@@ -89,12 +89,25 @@ function tsMinutosDataHora(celula) {
     }
 
     const t = String(celula ?? "").trim();
+    if (!t) return null;
+    
+    // Tenta o formato DD/MM/YYYY HH:MM ou DD-MM-YYYY HH:MM
     const m = t.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})[^\d]*(\d{1,2}):(\d{2})/);
     if (m) {
         const [, dd, mm, yy, h, mi] = m;
         const y = yy.length === 2 ? 2000 + Number(yy) : Number(yy);
         return Math.floor(Date.UTC(y, Number(mm) - 1, Number(dd), Number(h), Number(mi)) / 60000);
     }
+    
+    // Tenta parsear como Date string genérico (ex: "Tue Sep 08 2026 16:39:10 GMT-0300")
+    const d = new Date(t);
+    if (!isNaN(d.getTime())) {
+        return Math.floor(Date.UTC(
+            d.getFullYear(), d.getMonth(), d.getDate(),
+            d.getHours(), d.getMinutes()
+        ) / 60000);
+    }
+    
     return null;
 }
 
@@ -168,7 +181,13 @@ function ehColunaData(cabecalho) {
 }
 
 function ehColunaAgente(cabecalho) {
-    return String(cabecalho ?? "").toUpperCase().includes("AGENTE");
+    const t = String(cabecalho ?? "").toUpperCase();
+    return t.includes("AGENTE");
+}
+
+function ehColunaNumeroAgente(cabecalho) {
+    const t = String(cabecalho ?? "").toUpperCase();
+    return t.includes("NÚMERO DO AGENTE") || t.includes("NUMERO DO AGENTE");
 }
 
 /* ---------- protocolo ---------- */
@@ -202,13 +221,23 @@ async function lerPlanilha(file) {
         const colunasTelefone = [];
         let colunaData = -1;
         let colunaAgente = -1;
+        let colunaNumeroAgente = -1;
         let colunaProtocolo = -1;
 
         linhas[0].forEach((c, i) => {
             if (ehColunaTelefone(c)) colunasTelefone.push(i);
             if (colunaData < 0 && ehColunaData(c)) colunaData = i;
-            if (colunaAgente < 0 && ehColunaAgente(c)) colunaAgente = i;
+            if (colunaAgente < 0 && ehColunaAgente(c) && !ehColunaNumeroAgente(c)) colunaAgente = i;
+            if (colunaNumeroAgente < 0 && ehColunaNumeroAgente(c)) colunaNumeroAgente = i;
             if (colunaProtocolo < 0 && ehColunaProtocolo(c)) colunaProtocolo = i;
+        });
+
+        console.log("📊 Colunas encontradas:", {
+            telefone: colunasTelefone,
+            data: colunaData,
+            agente: colunaAgente,
+            numeroAgente: colunaNumeroAgente,
+            protocolo: colunaProtocolo
         });
 
         const rows = [];
@@ -247,7 +276,36 @@ async function lerPlanilha(file) {
             }
 
             const ts = colunaData >= 0 ? tsMinutosDataHora(linha[colunaData]) : null;
-            const agente = colunaAgente >= 0 ? infoAgente(linha[colunaAgente]) : null;
+            
+            // CORREÇÃO: extrai o agente COM o número da coluna separada
+            let agente = null;
+            if (colunaAgente >= 0) {
+                agente = infoAgente(linha[colunaAgente]);
+                // Se tem coluna de número do agente, adiciona ao objeto agente
+                if (agente && colunaNumeroAgente >= 0) {
+                    const numAgente = textoDaCelula(linha[colunaNumeroAgente]).replace(/\D/g, "");
+                    if (numAgente) {
+                        agente.numero = numAgente;
+                    }
+                }
+            }
+
+            if (idxLinha === 1 && colunaData >= 0) {
+                console.log("🕐 DEBUG DATA:", {
+                    celulaRaw: linha[colunaData],
+                    celulaString: String(linha[colunaData]),
+                    tsMinutos: ts,
+                    dataObj: new Date(linha[colunaData])
+                });
+            }
+
+            if (idxLinha === 1 && colunaAgente >= 0) {
+                console.log("👤 DEBUG AGENTE:", {
+                    nomeAgente: linha[colunaAgente],
+                    numeroAgente: colunaNumeroAgente >= 0 ? linha[colunaNumeroAgente] : "N/A",
+                    agenteObj: agente
+                });
+            }
 
             if (ts !== null) registrosData.push({ ts, agente, sujeito });
             if (agente) agentesPlanilha.push({ ...agente, sujeito });
@@ -264,6 +322,10 @@ async function lerPlanilha(file) {
 
         folhas.push({ nome: nomeAba, rows });
     }
+
+    console.log("📋 Total registros data/hora:", registrosData.length);
+    console.log(" Total agentes:", agentesPlanilha.length);
+    console.log("📞 Total telefones:", mapaBase.size);
 
     const duplicados = [...ocorrencias.entries()]
         .filter(([, ids]) => ids.length > 1)
@@ -286,28 +348,6 @@ async function lerPlanilha(file) {
         totalRegistros,
         duplicados,
     };
-}
-
-/* ---------- busca data/hora com tolerância ---------- */
-
-function buscarPorDataAgente(registrosData, tsArq, agArq) {
-    if (tsArq === null) return null;
-
-    let melhor = null;
-    let melhorDiff = Infinity;
-
-    for (const r of registrosData) {
-        const diff = Math.abs(r.ts - tsArq);
-        if (diff > TOLERANCIA_MIN) continue;
-        if (!agenteBate(r.agente, agArq)) continue;
-
-        if (diff < melhorDiff) {
-            melhorDiff = diff;
-            melhor = r;
-        }
-    }
-
-    return melhor;
 }
 
 /* ---------- ZIP genérico (usado pelos outros botões) ---------- */
@@ -370,18 +410,16 @@ async function baixarZipEmLotes(arquivos, nomeZip, botao, tamanhoLote = 50) {
         if (botao) botao.disabled = true;
 
         const zip = new JSZip();
-        const nomesBaseUsados = new Set(); // Para evitar arquivos com nomes duplicados
+        const nomesBaseUsados = new Set();
 
         for (let i = 0; i < arquivos.length; i++) {
-            // Calcula em qual pasta (lote) o arquivo deve entrar
             const loteIndex = Math.floor(i / tamanhoLote) + 1;
-            const nomePasta = `lote_${String(loteIndex).padStart(2, '0')}`; // Ex: lote_01, lote_02
+            const nomePasta = `lote_${String(loteIndex).padStart(2, '0')}`;
             const pastaLote = zip.folder(nomePasta);
             
             const file = arquivos[i];
             let nomeFinal = file.name;
             
-            // Lógica de nomes únicos (evita sobrescrever arquivos com mesmo nome)
             let contador = 1;
             while (nomesBaseUsados.has(nomeFinal)) {
                 const ponto = file.name.lastIndexOf(".");
@@ -392,7 +430,6 @@ async function baixarZipEmLotes(arquivos, nomeZip, botao, tamanhoLote = 50) {
             }
             nomesBaseUsados.add(nomeFinal);
             
-            // Adiciona o arquivo dentro da pasta do lote
             pastaLote.file(nomeFinal, file);
         }
 
@@ -428,7 +465,6 @@ function baixarEncontradosCSV() {
     try {
         if (statusTexto) statusTexto.textContent = "Gerando CSV dos encontrados...";
 
-        // Cabeçalho do CSV
         const cabecalho = [
             "Nome do Arquivo",
             "Regra de Match",
@@ -549,7 +585,7 @@ function baixarPlanilhaRestante() {
             statusTexto.textContent = `✅ CSV baixado com ${totalExportado} linha(s)!`;
         }
     } catch (erro) {
-        console.error("❌ ERRO FATAL:", erro);
+        console.error(" ERRO FATAL:", erro);
         alert("Erro ao gerar arquivo: " + erro.message);
     }
 }
@@ -674,11 +710,15 @@ inputDocumento?.addEventListener("change", () => {
 btnProcessar?.addEventListener("click", async () => {
     if (listaResultado) listaResultado.innerHTML = "";
     arquivosEncontrados = [];
-    arquivosEncontradosPorData = []; // NOVO: reseta o array
+    arquivosEncontradosPorData = [];
     arquivosForaDaPlanilha = [];
     numerosEncontrados = new Set();
     linhasEncontradas = new Set();
     linhasRestantes = 0;
+    
+    // NOVO: controle de linhas já utilizadas para evitar match duplicado
+    let linhasUtilizadas = new Set();
+    
     atualizarBotoes();
     if (statusTexto) statusTexto.textContent = "Lendo planilha e processando...";
 
@@ -702,18 +742,27 @@ btnProcessar?.addEventListener("click", async () => {
         const nao = [];
         let cProto = 0, cTel = 0, cData = 0, cAgente = 0;
 
-        for (const f of arquivos) {
+        for (let idx = 0; idx < arquivos.length; idx++) {
+            const f = arquivos[idx];
             const numsArquivo = extrairNumerosDe(f.name);
             const protoArquivo = String(f.name).match(/(\d+)/)?.[1] || null;
             const tsArq = tsMinutosDoArquivo(f.name);
             const agArq = infoAgenteDoArquivo(f.name);
+            
+            if (idx < 3) {
+                console.log(`\n🔍 ARQUIVO ${idx + 1}:`, f.name);
+                console.log("  - Números extraídos:", numsArquivo);
+                console.log("  - Timestamp arquivo:", tsArq, tsArq ? new Date(tsArq * 60000).toISOString() : "");
+                console.log("  - Agente arquivo:", agArq);
+            }
+            
             let evidencia = null;
             let regra = "";
 
             // 1) protocolo
             if (!evidencia && mapaProtocolo.size > 0 && protoArquivo) {
                 const hit = mapaProtocolo.get(protoArquivo);
-                if (hit) {
+                if (hit && !linhasUtilizadas.has(hit)) {
                     evidencia = { numeroArquivo: protoArquivo, numeroPlanilha: protoArquivo, sujeito: hit };
                     regra = "protocolo";
                 }
@@ -724,7 +773,7 @@ btnProcessar?.addEventListener("click", async () => {
                 for (const n of numsArquivo) {
                     for (const v of variantes(n)) {
                         const hit = mapaVariante.get(v);
-                        if (hit) {
+                        if (hit && !linhasUtilizadas.has(hit.sujeito)) {
                             evidencia = { numeroArquivo: n, numeroPlanilha: hit.numero, sujeito: hit.sujeito };
                             regra = "tel";
                             break;
@@ -734,36 +783,78 @@ btnProcessar?.addEventListener("click", async () => {
                 }
             }
 
-            // 3) data/hora
-            if (!evidencia) {
-                const hit = buscarPorDataAgente(registrosData, tsArq, agArq);
-                if (hit) {
-                    evidencia = { numeroArquivo: String(tsArq), numeroPlanilha: String(hit.ts), sujeito: hit.sujeito };
+            // 3) data/hora (com controle de linhas utilizadas)
+            if (!evidencia && tsArq !== null) {
+                let melhorHit = null;
+                let melhorDiff = Infinity;
+                
+                for (const r of registrosData) {
+                    // Pula linhas já utilizadas
+                    if (linhasUtilizadas.has(r.sujeito)) continue;
+                    
+                    const diff = Math.abs(r.ts - tsArq);
+                    if (diff > TOLERANCIA_MIN) continue;
+                    if (!agenteBate(r.agente, agArq)) continue;
+
+                    if (diff < melhorDiff) {
+                        melhorDiff = diff;
+                        melhorHit = r;
+                    }
+                }
+                
+                if (melhorHit) {
+                    evidencia = { numeroArquivo: String(tsArq), numeroPlanilha: String(melhorHit.ts), sujeito: melhorHit.sujeito };
                     regra = "data";
+                } else if (idx < 3) {
+                    console.log("   NÃO achou por data/hora. Buscando...");
+                    console.log("    Registros disponíveis:", registrosData.length);
+                    if (registrosData.length > 0) {
+                        console.log("    Primeiro registro:", registrosData[0]);
+                        console.log("    Diff minutos:", Math.abs(registrosData[0].ts - tsArq));
+                    }
                 }
             }
 
-            // 4) agente
-            if (!evidencia && tsArq === null && agArq) {
-                const hit = agentesPlanilha.find((a) => agenteBate(a, agArq) && (a.nomeSo || a.numero));
-                if (hit) {
-                    evidencia = { numeroArquivo: agArq.t, numeroPlanilha: hit.t, sujeito: hit.sujeito };
-                    regra = "agente";
+            // 4) agente (fallback - com controle de linhas utilizadas)
+            if (!evidencia && agArq) {
+                for (const a of agentesPlanilha) {
+                    // Pula linhas já utilizadas
+                    if (linhasUtilizadas.has(a.sujeito)) continue;
+                    
+                    if (agenteBate(a, agArq) && (a.nomeSo || a.numero)) {
+                        evidencia = { numeroArquivo: agArq.t, numeroPlanilha: a.t, sujeito: a.sujeito };
+                        regra = "agente";
+                        break;
+                    }
+                }
+                
+                if (!evidencia && idx < 3) {
+                    console.log("  ❌ NÃO achou por agente. Agentes disponíveis:", agentesPlanilha.length);
                 }
             }
 
             if (evidencia) {
+                // Marca a linha como utilizada
+                linhasUtilizadas.add(evidencia.sujeito);
+                
                 if (regra === "protocolo") cProto++;
                 if (regra === "tel") { cTel++; numerosEncontrados.add(evidencia.numeroPlanilha); }
                 if (regra === "data") {
                     cData++;
-                    arquivosEncontradosPorData.push(f); // NOVO: salva separadamente
+                    arquivosEncontradosPorData.push(f);
                 }
                 if (regra === "agente") cAgente++;
                 linhasEncontradas.add(evidencia.sujeito);
                 achados.push({ file: f, nome: f.webkitRelativePath || f.name, regra, ...evidencia });
+                
+                if (idx < 3) {
+                    console.log("  ✅ ENCONTRADO por:", regra);
+                }
             } else {
                 nao.push({ file: f, nome: f.webkitRelativePath || f.name, numeros: numsArquivo });
+                if (idx < 3) {
+                    console.log("  ❌ NÃO ENCONTRADO");
+                }
             }
         }
 
