@@ -55,14 +55,150 @@ function normalizarTexto(t) {
         .trim();
 }
 
+/* ---------- NOVO: Normalização ULTRA inteligente de telefone ---------- */
+
+function normalizarTelefone(texto) {
+    // Extrai TODOS os dígitos do texto
+    const todosDigitos = String(texto).replace(/\D/g, "");
+    if (!todosDigitos || todosDigitos.length < 8) return [];
+    
+    const resultados = new Set();
+    
+    // Estratégia 1: Limpar zeros à esquerda do número inteiro
+    resultados.add(limpar(todosDigitos));
+    
+    // Estratégia 2: Remover prefixo de operadora (0XX) antes do DDD
+    // Ex: "01111999999999" -> "11999999999" (remove o primeiro 011)
+    if (todosDigitos.length >= 13) {
+        const semPrefixoOperadora = todosDigitos.replace(/^0(\d{2})/, "$1");
+        resultados.add(limpar(semPrefixoOperadora));
+    }
+    
+    // Estratégia 3: Remover múltiplos zeros no início
+    // Ex: "0011999999999" -> "11999999999"
+    const semZerosInicio = todosDigitos.replace(/^0+/, "");
+    if (semZerosInicio.length >= 10) {
+        resultados.add(semZerosInicio);
+    }
+    
+    // Estratégia 4: Identificar DDD duplicado
+    // Ex: "1111999999999" -> "11999999999" (remove o 11 duplicado)
+    const matchDDDDup = todosDigitos.match(/^(\d{2})\1+(\d{8,9})$/);
+    if (matchDDDDup) {
+        const ddd = matchDDDDup[1];
+        const numero = matchDDDDup[2];
+        resultados.add(ddd + numero);
+    }
+    
+    // Estratégia 5: Remover código do país duplicado
+    // Ex: "555511999999999" -> "5511999999999"
+    if (todosDigitos.startsWith("5555")) {
+        resultados.add(limpar(todosDigitos.slice(2)));
+    }
+    
+    // Estratégia 6: Se tem 55 no início, gerar versão sem 55
+    if (todosDigitos.startsWith("55") && todosDigitos.length >= 12) {
+        resultados.add(todosDigitos.slice(2));
+    }
+    
+    // Estratégia 7: Se NÃO tem 55 no início, gerar versão com 55
+    if (!todosDigitos.startsWith("55") && todosDigitos.length >= 10) {
+        resultados.add("55" + todosDigitos);
+    }
+    
+    // Estratégia 8: Celular com e sem o 9
+    // Se tem 11 dígitos (com 9), gerar versão sem o 9 (10 dígitos)
+    if (todosDigitos.length === 11) {
+        const semNove = todosDigitos.slice(0, 2) + todosDigitos.slice(3);
+        resultados.add(semNove);
+    }
+    // Se tem 10 dígitos (sem 9), gerar versão com o 9 (11 dígitos)
+    if (todosDigitos.length === 10) {
+        const comNove = todosDigitos.slice(0, 2) + "9" + todosDigitos.slice(2);
+        resultados.add(comNove);
+    }
+    
+    // Estratégia 9: Se tem 12 dígitos (55 + 11), gerar variações
+    if (todosDigitos.length === 12 && todosDigitos.startsWith("55")) {
+        const sem55 = todosDigitos.slice(2);
+        resultados.add(sem55);
+        
+        // Com 9
+        const comNove = sem55.slice(0, 2) + "9" + sem55.slice(2);
+        resultados.add("55" + comNove);
+        
+        // Sem 9
+        const semNove = sem55.slice(0, 2) + sem55.slice(3);
+        resultados.add("55" + semNove);
+    }
+    
+    // Estratégia 10: Se tem 13 dígitos (55 + 10), gerar variações
+    if (todosDigitos.length === 13 && todosDigitos.startsWith("55")) {
+        const sem55 = todosDigitos.slice(2);
+        resultados.add(sem55);
+        
+        // Com 9
+        const comNove = sem55.slice(0, 2) + "9" + sem55.slice(2);
+        resultados.add("55" + comNove);
+    }
+    
+    // Estratégia 11: Tentar identificar padrões de DDD bagunçado
+    // Ex: "01011999999999" -> tenta extrair DDD "11"
+    const matchDDDBaguncado = todosDigitos.match(/^0*(\d)(\d)\1*\2+(\d{8,9})$/);
+    if (matchDDDBaguncado) {
+        const ddd = matchDDDBaguncado[1] + matchDDDBaguncado[2];
+        const numero = matchDDDBaguncado[3];
+        resultados.add(ddd + numero);
+        resultados.add("55" + ddd + numero);
+    }
+    
+    // Estratégia 12: Se tem muitos dígitos (>13), tentar extrair os últimos 10-11
+    if (todosDigitos.length > 13) {
+        const ultimos11 = todosDigitos.slice(-11);
+        const ultimos10 = todosDigitos.slice(-10);
+        resultados.add(ultimos11);
+        resultados.add(ultimos10);
+        resultados.add("55" + ultimos11);
+        resultados.add("55" + ultimos10);
+    }
+    
+    // Filtrar resultados válidos (mínimo 8 dígitos)
+    return [...resultados].filter(n => n.length >= 8 && n.length <= 15);
+}
+
 function variantes(numero) {
     const n = limpar(numero);
     const vars = new Set([n]);
+    
+    // Variações padrão
     if (n.startsWith("55") && n.length >= 12) vars.add(n.slice(2));
     if (n.length > 11) vars.add(n.slice(-11));
     if (n.length > 10) vars.add(n.slice(-10));
     if (n.length > 9) vars.add(n.slice(-9));
     if (n.length > 8) vars.add(n.slice(-8));
+    
+    // NOVO: Se o número tem DDD bagunçado, tentar variações
+    if (n.length >= 12) {
+        // Tentar remover "1" extra do DDD (ex: "111999999999" -> "11999999999")
+        const semUmExtra = n.replace(/^(\d)\1+/, "$1");
+        if (semUmExtra !== n) vars.add(semUmExtra);
+        
+        // Tentar adicionar "55" se não tiver
+        if (!n.startsWith("55")) {
+            vars.add("55" + n);
+        }
+    }
+    
+    // NOVO: Celular com e sem 9
+    if (n.length === 11 && !n.startsWith("55")) {
+        const semNove = n.slice(0, 2) + n.slice(3);
+        vars.add(semNove);
+    }
+    if (n.length === 10 && !n.startsWith("55")) {
+        const comNove = n.slice(0, 2) + "9" + n.slice(2);
+        vars.add(comNove);
+    }
+    
     return [...vars].filter((v) => v.length >= 8);
 }
 
@@ -154,12 +290,18 @@ function extrairNumerosDe(texto) {
     const nums = [];
     if (!t) return nums;
 
-    if (PADRAO_TEL.test(t) || PADRAO_TEL_SEM_DDD.test(t)) {
-        nums.push(limpar(t.replace(/\D/g, "")));
-    }
+    // NOVO: Usa normalização ULTRA inteligente para DDDs bagunçados
+    const normalizados = normalizarTelefone(t);
+    nums.push(...normalizados);
 
+    // Também extrai sequências numéricas tradicionais como fallback
     for (const seq of sequenciasDe(t)) {
-        if (seq.length >= 8) nums.push(limpar(seq));
+        if (seq.length >= 8) {
+            const limpo = limpar(seq);
+            if (!nums.includes(limpo)) {
+                nums.push(limpo);
+            }
+        }
     }
 
     return nums;
@@ -648,6 +790,38 @@ if (!btnEncontradosCSV) {
     btnEncontradosCSV.addEventListener("click", baixarEncontradosCSV);
 }
 
+/* ---------- NOVO: Checkbox para alternar modo de busca ---------- */
+let chkModoMatch = document.getElementById("chkModoMatch");
+if (!chkModoMatch) {
+    const containerAcoes = document.querySelector(".acoesSeparar") || btnProcessar?.parentElement || document.body;
+    
+    const wrapper = document.createElement("div");
+    wrapper.style.cssText = "margin-bottom: 12px; display: flex; align-items: center; gap: 8px; font-family: sans-serif; font-size: 0.9rem; color: #333;";
+    
+    chkModoMatch = document.createElement("input");
+    chkModoMatch.type = "checkbox";
+    chkModoMatch.id = "chkModoMatch";
+    chkModoMatch.style.cursor = "pointer";
+    chkModoMatch.style.width = "18px";
+    chkModoMatch.style.height = "18px";
+    
+    const label = document.createElement("label");
+    label.htmlFor = "chkModoMatch";
+    label.textContent = "Forçar busca por Data/Hora e Agente (ignora Protocolo e Telefone)";
+    label.style.cursor = "pointer";
+    label.style.fontWeight = "500";
+    
+    wrapper.appendChild(chkModoMatch);
+    wrapper.appendChild(label);
+    
+    // Insere a caixa de seleção logo antes do botão Processar
+    if (btnProcessar) {
+        containerAcoes.insertBefore(wrapper, btnProcessar);
+    } else {
+        containerAcoes.appendChild(wrapper);
+    }
+}
+
 /* ---------- estado dos botões ---------- */
 
 function atualizarBotoes() {
@@ -729,6 +903,9 @@ btnProcessar?.addEventListener("click", async () => {
         if (!arquivos.length) throw new Error("Selecione a pasta com os arquivos.");
         if (!documento) throw new Error("Selecione o Excel ou CSV com os números.");
 
+        // Lê o estado do checkbox para definir o modo de busca
+        const forcarDataEAgente = chkModoMatch?.checked || false;
+
         const { mapaVariante, mapaProtocolo, registrosData, agentesPlanilha, folhas, totalUnicos, totalRegistros, duplicados } =
             await lerPlanilha(documento);
 
@@ -759,31 +936,34 @@ btnProcessar?.addEventListener("click", async () => {
             let evidencia = null;
             let regra = "";
 
-            // 1) protocolo
-            if (!evidencia && mapaProtocolo.size > 0 && protoArquivo) {
-                const hit = mapaProtocolo.get(protoArquivo);
-                if (hit && !linhasUtilizadas.has(hit)) {
-                    evidencia = { numeroArquivo: protoArquivo, numeroPlanilha: protoArquivo, sujeito: hit };
-                    regra = "protocolo";
-                }
-            }
-
-            // 2) telefone
-            if (!evidencia) {
-                for (const n of numsArquivo) {
-                    for (const v of variantes(n)) {
-                        const hit = mapaVariante.get(v);
-                        if (hit && !linhasUtilizadas.has(hit.sujeito)) {
-                            evidencia = { numeroArquivo: n, numeroPlanilha: hit.numero, sujeito: hit.sujeito };
-                            regra = "tel";
-                            break;
-                        }
+            // 1) e 2) protocolo e telefone (SÓ EXECUTA SE O CHECKBOX ESTIVER DESMARCADO)
+            if (!forcarDataEAgente) {
+                // 1) protocolo
+                if (!evidencia && mapaProtocolo.size > 0 && protoArquivo) {
+                    const hit = mapaProtocolo.get(protoArquivo);
+                    if (hit && !linhasUtilizadas.has(hit)) {
+                        evidencia = { numeroArquivo: protoArquivo, numeroPlanilha: protoArquivo, sujeito: hit };
+                        regra = "protocolo";
                     }
-                    if (evidencia) break;
+                }
+
+                // 2) telefone
+                if (!evidencia) {
+                    for (const n of numsArquivo) {
+                        for (const v of variantes(n)) {
+                            const hit = mapaVariante.get(v);
+                            if (hit && !linhasUtilizadas.has(hit.sujeito)) {
+                                evidencia = { numeroArquivo: n, numeroPlanilha: hit.numero, sujeito: hit.sujeito };
+                                regra = "tel";
+                                break;
+                            }
+                        }
+                        if (evidencia) break;
+                    }
                 }
             }
 
-            // 3) data/hora (com controle de linhas utilizadas)
+            // 3) data/hora (EXECUTA SEMPRE, mas ganha prioridade total se o checkbox estiver marcado)
             if (!evidencia && tsArq !== null) {
                 let melhorHit = null;
                 let melhorDiff = Infinity;
@@ -879,8 +1059,9 @@ btnProcessar?.addEventListener("click", async () => {
         arquivosForaDaPlanilha = nao.map((n) => n.file);
 
         if (statusTexto) {
+            const modoTexto = forcarDataEAgente ? "🕒 MODO: Data/Hora e Agente" : "📞 MODO: Protocolo e Telefone";
             statusTexto.textContent =
-                `Concluído. Registros na planilha: ${totalRegistros}. ` +
+                `Concluído (${modoTexto}). Registros na planilha: ${totalRegistros}. ` +
                 `Encontrados: ${achados.length} (protocolo: ${cProto} • telefone: ${cTel} • data/hora ±${TOLERANCIA_MIN}min: ${cData} • agente: ${cAgente}) • ` +
                 `Fora da planilha: ${nao.length} • Linhas restantes: ${linhasRestantes}.`;
         }
