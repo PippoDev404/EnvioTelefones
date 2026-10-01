@@ -1,13 +1,13 @@
 // 5-js/separarArquivos.js
-// Match por 4 chaves (em ordem):
+// Match por 2 chaves principais (modo padrão):
 //  1) protocolo
 //  2) telefone
-//  3) data/hora com JANELA DE ±30 MIN (+ confirma agente quando disponível)
-//  4) agente (fallback quando as outras regras falham)
+// Modo alternativo (checkbox marcado):
+//  3) data/hora com JANELA DE ±30 MIN
+//  4) agente (fallback)
 // Suporta dois formatos de arquivo:
 //  - Br Call: 20260930_164409_Agente_Nome_ID_Tel_(DD) 9 XXXX-XXXX_Fila_...
 //  - Verreschi: 26237657_oloswebrtcagentid..._78835538997268633_162_1670_20260930_083113
-//    (prefixo variável: 7883, 25010, 788, 2501 + número do telefone)
 import * as XLSX from "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm";
 import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
 
@@ -261,10 +261,7 @@ function ehFormatoVerreschi(nome) {
     return /oloswebrtcagentid/i.test(nome);
 }
 
-// CORREÇÃO: Detecta diferentes prefixos (7883, 25010, 788, 2501) e extrai o telefone
 function extrairInfoVerreschi(nome) {
-    // Formato: 26237657_oloswebrtcagentid167010247100208098_78835538997268633_162_1670_20260930_083113.mp3
-    // ou: 269668121_oloswebrtcagentid167810247100208098_250105538998297356_162_1678_20261001_084004.mp3
     const nomeLimpo = String(nome).replace(/\.(mp3|wav|ogg)$/i, "");
     const partes = nomeLimpo.split('_');
     
@@ -277,11 +274,9 @@ function extrairInfoVerreschi(nome) {
     for (let i = 0; i < partes.length; i++) {
         const parte = partes[i];
         
-        // Número longo (13-18 dígitos) que pode ser telefone com prefixo variável
         if (parte.length >= 13 && parte.length <= 18 && /^\d+$/.test(parte)) {
             console.log(`  [Verreschi] → Número longo detectado: "${parte}" (length=${parte.length})`);
             
-            // Tenta diferentes prefixos conhecidos (ordem importa: maiores primeiro)
             const prefixosConhecidos = ['25010', '7883', '2501', '788'];
             let encontrado = false;
             
@@ -294,7 +289,6 @@ function extrairInfoVerreschi(nome) {
                 }
             }
             
-            // Se não encontrou prefixo conhecido, pega os últimos 13 dígitos (formato brasileiro: 55+DDD+número)
             if (!encontrado) {
                 if (parte.length > 13) {
                     telefone = parte.slice(-13);
@@ -306,18 +300,15 @@ function extrairInfoVerreschi(nome) {
             }
         }
         
-        // ID de agente (3-4 dígitos) - pega o PRIMEIRO encontrado
         if (!agenteId && parte.length >= 3 && parte.length <= 4 && /^\d+$/.test(parte)) {
             agenteId = parte;
             console.log(`  [Verreschi] → ID agente detectado: "${agenteId}"`);
         }
         
-        // Data/hora (YYYYMMDD_HHMMSS ou YYYYMMDD)
         if (/^\d{8}_\d{6}$/.test(parte)) {
             dataHora = parte;
             console.log(`  [Verreschi] → Data/hora detectada: "${dataHora}"`);
         } else if (/^\d{8}$/.test(parte) && !dataHora) {
-            // Só data, sem hora
             dataHora = parte + "_000000";
             console.log(`  [Verreschi] → Só data detectada: "${parte}"`);
         }
@@ -442,7 +433,7 @@ async function lerPlanilha(file) {
         let colunaNumeroAgente = -1;
         let colunaProtocolo = -1;
 
-        console.log(`📋 Cabeçalhos da aba "${nomeAba}":`, linhas[0]);
+        console.log(` Cabeçalhos da aba "${nomeAba}":`, linhas[0]);
 
         linhas[0].forEach((c, i) => {
             if (ehColunaTelefone(c)) colunasTelefone.push(i);
@@ -509,7 +500,7 @@ async function lerPlanilha(file) {
             }
 
             if (idxLinha === 1 && colunaData >= 0) {
-                console.log(" DEBUG DATA:", {
+                console.log("🕐 DEBUG DATA:", {
                     celulaRaw: linha[colunaData],
                     celulaString: String(linha[colunaData]),
                     tsMinutos: ts,
@@ -572,7 +563,7 @@ async function lerPlanilha(file) {
 
 async function baixarZipDe(arquivos, nomeZip, botao) {
     if (!arquivos.length) {
-        alert("⚠️ Nenhum arquivo para baixar!");
+        alert("️ Nenhum arquivo para baixar!");
         return;
     }
 
@@ -676,7 +667,7 @@ async function baixarZipEmLotes(arquivos, nomeZip, botao, tamanhoLote = 50) {
 
 function baixarEncontradosCSV() {
     if (!ultimoResultado.achados || !ultimoResultado.achados.length) {
-        alert("️ Nenhum arquivo encontrado para exportar!");
+        alert("⚠️ Nenhum arquivo encontrado para exportar!");
         return;
     }
 
@@ -743,7 +734,7 @@ function linhaTemMatch(row) {
 
 function baixarPlanilhaRestante() {
     if (!estruturaPlanilha) {
-        console.error("❌ estruturaPlanilha é nula!");
+        console.error(" estruturaPlanilha é nula!");
         return;
     }
 
@@ -988,7 +979,6 @@ btnProcessar?.addEventListener("click", async () => {
         for (let idx = 0; idx < arquivos.length; idx++) {
             const f = arquivos[idx];
             
-            // Detecta formato e extrai informações
             const isVerreschi = ehFormatoVerreschi(f.name);
             let numsArquivo = [];
             let tsArq = null;
@@ -996,7 +986,6 @@ btnProcessar?.addEventListener("click", async () => {
             let formatoInfo = "";
             
             if (isVerreschi) {
-                // Formato Verreschi
                 formatoInfo = "Verreschi";
                 const info = extrairInfoVerreschi(f.name);
                 
@@ -1008,7 +997,6 @@ btnProcessar?.addEventListener("click", async () => {
                     agArq = { t: info.agenteId, numero: info.agenteId, nomeSo: "" };
                 }
                 
-                // Extrai o telefone do nome do arquivo Verreschi (com prefixo variável)
                 if (info.telefone) {
                     numsArquivo = normalizarTelefone(info.telefone);
                 }
@@ -1021,7 +1009,6 @@ btnProcessar?.addEventListener("click", async () => {
                     console.log("  - Números:", numsArquivo);
                 }
             } else {
-                // Formato Br Call
                 formatoInfo = "Br Call";
                 const telDoNome = extrairTelefoneDoNome(f.name);
                 let temTelefoneNoNome = false;
@@ -1038,7 +1025,7 @@ btnProcessar?.addEventListener("click", async () => {
                 agArq = infoAgenteDoArquivo(f.name);
                 
                 if (idx < 3) {
-                    console.log(`\n ARQUIVO ${idx + 1} (Br Call):`, f.name);
+                    console.log(`\n🔍 ARQUIVO ${idx + 1} (Br Call):`, f.name);
                     console.log("  - Tem Tel_ no nome?", temTelefoneNoNome);
                     console.log("  - Telefone extraído:", telDoNome);
                     console.log("  - Números para match:", numsArquivo);
@@ -1052,7 +1039,9 @@ btnProcessar?.addEventListener("click", async () => {
             let evidencia = null;
             let regra = "";
 
+            // MODO PADRÃO (checkbox desmarcado): APENAS protocolo e telefone
             if (!forcarDataEAgente) {
+                // 1) protocolo
                 if (!evidencia && mapaProtocolo.size > 0 && protoArquivo) {
                     const hit = mapaProtocolo.get(protoArquivo);
                     if (hit && !linhasUtilizadas.has(hit)) {
@@ -1061,6 +1050,7 @@ btnProcessar?.addEventListener("click", async () => {
                     }
                 }
 
+                // 2) telefone
                 if (!evidencia && numsArquivo.length > 0) {
                     for (const n of numsArquivo) {
                         for (const v of variantes(n)) {
@@ -1074,40 +1064,46 @@ btnProcessar?.addEventListener("click", async () => {
                         if (evidencia) break;
                     }
                 }
-            }
-
-            if (!evidencia && tsArq !== null) {
-                let melhorHit = null;
-                let melhorDiff = Infinity;
                 
-                for (const r of registrosData) {
-                    if (linhasUtilizadas.has(r.sujeito)) continue;
+                // NÃO tenta data/hora ou agente no modo padrão
+            }
+            // MODO FORÇADO (checkbox marcado): APENAS data/hora e agente
+            else {
+                // 3) data/hora
+                if (!evidencia && tsArq !== null) {
+                    let melhorHit = null;
+                    let melhorDiff = Infinity;
                     
-                    const diff = Math.abs(r.ts - tsArq);
-                    if (diff > TOLERANCIA_MIN) continue;
-                    
-                    if (agArq && !agenteBate(r.agente, agArq)) continue;
+                    for (const r of registrosData) {
+                        if (linhasUtilizadas.has(r.sujeito)) continue;
+                        
+                        const diff = Math.abs(r.ts - tsArq);
+                        if (diff > TOLERANCIA_MIN) continue;
+                        
+                        if (agArq && !agenteBate(r.agente, agArq)) continue;
 
-                    if (diff < melhorDiff) {
-                        melhorDiff = diff;
-                        melhorHit = r;
+                        if (diff < melhorDiff) {
+                            melhorDiff = diff;
+                            melhorHit = r;
+                        }
+                    }
+                    
+                    if (melhorHit) {
+                        evidencia = { numeroArquivo: String(tsArq), numeroPlanilha: String(melhorHit.ts), sujeito: melhorHit.sujeito };
+                        regra = "data";
                     }
                 }
-                
-                if (melhorHit) {
-                    evidencia = { numeroArquivo: String(tsArq), numeroPlanilha: String(melhorHit.ts), sujeito: melhorHit.sujeito };
-                    regra = "data";
-                }
-            }
 
-            if (!evidencia && agArq) {
-                for (const a of agentesPlanilha) {
-                    if (linhasUtilizadas.has(a.sujeito)) continue;
-                    
-                    if (agenteBate(a, agArq) && (a.nomeSo || a.numero)) {
-                        evidencia = { numeroArquivo: agArq.t, numeroPlanilha: a.t, sujeito: a.sujeito };
-                        regra = "agente";
-                        break;
+                // 4) agente (fallback)
+                if (!evidencia && agArq) {
+                    for (const a of agentesPlanilha) {
+                        if (linhasUtilizadas.has(a.sujeito)) continue;
+                        
+                        if (agenteBate(a, agArq) && (a.nomeSo || a.numero)) {
+                            evidencia = { numeroArquivo: agArq.t, numeroPlanilha: a.t, sujeito: a.sujeito };
+                            regra = "agente";
+                            break;
+                        }
                     }
                 }
             }
@@ -1157,7 +1153,7 @@ btnProcessar?.addEventListener("click", async () => {
         arquivosForaDaPlanilha = nao.map((n) => n.file);
 
         if (statusTexto) {
-            const modoTexto = forcarDataEAgente ? "🕒 MODO: Data/Hora e Agente" : "📞 MODO: Protocolo e Telefone";
+            const modoTexto = forcarDataEAgente ? " MODO: Data/Hora e Agente" : "📞 MODO: Protocolo e Telefone";
             statusTexto.textContent =
                 `Concluído (${modoTexto}). Registros na planilha: ${totalRegistros}. ` +
                 `Encontrados: ${achados.length} (protocolo: ${cProto} • telefone: ${cTel} • data/hora ±${TOLERANCIA_MIN}min: ${cData} • agente: ${cAgente}) • ` +
