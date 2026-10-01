@@ -1,16 +1,9 @@
 // 5-js/separarArquivos.js
-// Match por 4 chaves (em ordem):
-//  1) protocolo (novo!)
-//  2) telefone
-//  3) data/hora com JANELA DE ±30 MIN (+ confirma agente quando disponível)
-//  4) agente (fallback quando as outras regras falham)
-// Botões: Processar | encontrados (.zip em lotes de 50) | encontrados (.csv) | NÃO encontrados (.csv) | por data/hora (.zip) | fora da planilha (.zip)
 import * as XLSX from "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm";
 import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
 
 console.log("✅ separarArquivos.js carregou");
 
-/* ⏱️ janela de tolerância da data/hora (em minutos) — mexa aqui se precisar */
 const TOLERANCIA_MIN = 30;
 
 const inputPasta = document.getElementById("inputPasta");
@@ -35,8 +28,6 @@ let linhasEncontradas = new Set();
 let linhasRestantes = 0;
 let ultimoResultado = { achados: [], nao: [], duplicados: [] };
 
-/* ---------- utilidades ---------- */
-
 function sequenciasDe(texto) {
     return String(texto).match(/\d+/g) || [];
 }
@@ -55,34 +46,23 @@ function normalizarTexto(t) {
         .trim();
 }
 
-/* ---------- NOVO: Normalização ULTRA inteligente de telefone ---------- */
-
 function normalizarTelefone(texto) {
-    // Extrai TODOS os dígitos do texto
     const todosDigitos = String(texto).replace(/\D/g, "");
     if (!todosDigitos || todosDigitos.length < 8) return [];
     
     const resultados = new Set();
-    
-    // Estratégia 1: Limpar zeros à esquerda do número inteiro
     resultados.add(limpar(todosDigitos));
     
-    // Estratégia 2: Remover prefixo de operadora (0XX) antes do DDD
-    // Ex: "01111999999999" -> "11999999999" (remove o primeiro 011)
     if (todosDigitos.length >= 13) {
         const semPrefixoOperadora = todosDigitos.replace(/^0(\d{2})/, "$1");
         resultados.add(limpar(semPrefixoOperadora));
     }
     
-    // Estratégia 3: Remover múltiplos zeros no início
-    // Ex: "0011999999999" -> "11999999999"
     const semZerosInicio = todosDigitos.replace(/^0+/, "");
     if (semZerosInicio.length >= 10) {
         resultados.add(semZerosInicio);
     }
     
-    // Estratégia 4: Identificar DDD duplicado
-    // Ex: "1111999999999" -> "11999999999" (remove o 11 duplicado)
     const matchDDDDup = todosDigitos.match(/^(\d{2})\1+(\d{8,9})$/);
     if (matchDDDDup) {
         const ddd = matchDDDDup[1];
@@ -90,60 +70,43 @@ function normalizarTelefone(texto) {
         resultados.add(ddd + numero);
     }
     
-    // Estratégia 5: Remover código do país duplicado
-    // Ex: "555511999999999" -> "5511999999999"
     if (todosDigitos.startsWith("5555")) {
         resultados.add(limpar(todosDigitos.slice(2)));
     }
     
-    // Estratégia 6: Se tem 55 no início, gerar versão sem 55
     if (todosDigitos.startsWith("55") && todosDigitos.length >= 12) {
         resultados.add(todosDigitos.slice(2));
     }
     
-    // Estratégia 7: Se NÃO tem 55 no início, gerar versão com 55
     if (!todosDigitos.startsWith("55") && todosDigitos.length >= 10) {
         resultados.add("55" + todosDigitos);
     }
     
-    // Estratégia 8: Celular com e sem o 9
-    // Se tem 11 dígitos (com 9), gerar versão sem o 9 (10 dígitos)
     if (todosDigitos.length === 11) {
         const semNove = todosDigitos.slice(0, 2) + todosDigitos.slice(3);
         resultados.add(semNove);
     }
-    // Se tem 10 dígitos (sem 9), gerar versão com o 9 (11 dígitos)
     if (todosDigitos.length === 10) {
         const comNove = todosDigitos.slice(0, 2) + "9" + todosDigitos.slice(2);
         resultados.add(comNove);
     }
     
-    // Estratégia 9: Se tem 12 dígitos (55 + 11), gerar variações
     if (todosDigitos.length === 12 && todosDigitos.startsWith("55")) {
         const sem55 = todosDigitos.slice(2);
         resultados.add(sem55);
-        
-        // Com 9
         const comNove = sem55.slice(0, 2) + "9" + sem55.slice(2);
         resultados.add("55" + comNove);
-        
-        // Sem 9
         const semNove = sem55.slice(0, 2) + sem55.slice(3);
         resultados.add("55" + semNove);
     }
     
-    // Estratégia 10: Se tem 13 dígitos (55 + 10), gerar variações
     if (todosDigitos.length === 13 && todosDigitos.startsWith("55")) {
         const sem55 = todosDigitos.slice(2);
         resultados.add(sem55);
-        
-        // Com 9
         const comNove = sem55.slice(0, 2) + "9" + sem55.slice(2);
         resultados.add("55" + comNove);
     }
     
-    // Estratégia 11: Tentar identificar padrões de DDD bagunçado
-    // Ex: "01011999999999" -> tenta extrair DDD "11"
     const matchDDDBaguncado = todosDigitos.match(/^0*(\d)(\d)\1*\2+(\d{8,9})$/);
     if (matchDDDBaguncado) {
         const ddd = matchDDDBaguncado[1] + matchDDDBaguncado[2];
@@ -152,7 +115,6 @@ function normalizarTelefone(texto) {
         resultados.add("55" + ddd + numero);
     }
     
-    // Estratégia 12: Se tem muitos dígitos (>13), tentar extrair os últimos 10-11
     if (todosDigitos.length > 13) {
         const ultimos11 = todosDigitos.slice(-11);
         const ultimos10 = todosDigitos.slice(-10);
@@ -162,7 +124,6 @@ function normalizarTelefone(texto) {
         resultados.add("55" + ultimos10);
     }
     
-    // Filtrar resultados válidos (mínimo 8 dígitos)
     return [...resultados].filter(n => n.length >= 8 && n.length <= 15);
 }
 
@@ -170,26 +131,20 @@ function variantes(numero) {
     const n = limpar(numero);
     const vars = new Set([n]);
     
-    // Variações padrão
     if (n.startsWith("55") && n.length >= 12) vars.add(n.slice(2));
     if (n.length > 11) vars.add(n.slice(-11));
     if (n.length > 10) vars.add(n.slice(-10));
     if (n.length > 9) vars.add(n.slice(-9));
     if (n.length > 8) vars.add(n.slice(-8));
     
-    // NOVO: Se o número tem DDD bagunçado, tentar variações
     if (n.length >= 12) {
-        // Tentar remover "1" extra do DDD (ex: "111999999999" -> "11999999999")
         const semUmExtra = n.replace(/^(\d)\1+/, "$1");
         if (semUmExtra !== n) vars.add(semUmExtra);
-        
-        // Tentar adicionar "55" se não tiver
         if (!n.startsWith("55")) {
             vars.add("55" + n);
         }
     }
     
-    // NOVO: Celular com e sem 9
     if (n.length === 11 && !n.startsWith("55")) {
         const semNove = n.slice(0, 2) + n.slice(3);
         vars.add(semNove);
@@ -214,8 +169,6 @@ function textoDaCelula(celula) {
     return t;
 }
 
-/* ---------- data/hora em "minutos UTC" (pra comparar com tolerância) ---------- */
-
 function tsMinutosDataHora(celula) {
     if (celula instanceof Date && !isNaN(celula)) {
         return Math.floor(Date.UTC(
@@ -227,7 +180,6 @@ function tsMinutosDataHora(celula) {
     const t = String(celula ?? "").trim();
     if (!t) return null;
     
-    // Tenta o formato DD/MM/YYYY HH:MM ou DD-MM-YYYY HH:MM
     const m = t.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})[^\d]*(\d{1,2}):(\d{2})/);
     if (m) {
         const [, dd, mm, yy, h, mi] = m;
@@ -235,7 +187,6 @@ function tsMinutosDataHora(celula) {
         return Math.floor(Date.UTC(y, Number(mm) - 1, Number(dd), Number(h), Number(mi)) / 60000);
     }
     
-    // Tenta parsear como Date string genérico (ex: "Tue Sep 08 2026 16:39:10 GMT-0300")
     const d = new Date(t);
     if (!isNaN(d.getTime())) {
         return Math.floor(Date.UTC(
@@ -247,15 +198,12 @@ function tsMinutosDataHora(celula) {
     return null;
 }
 
-// do nome do arquivo: 20260806_103015 -> minutos UTC
 function tsMinutosDoArquivo(nome) {
     const m = String(nome).match(/(\d{4})(\d{2})(\d{2})[_\-](\d{2})(\d{2})(\d{2})/);
     if (!m) return null;
     const [, y, mo, d, h, mi, s] = m;
     return Math.floor(Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)) / 60000);
 }
-
-/* ---------- agente ---------- */
 
 function infoAgente(texto) {
     const t = normalizarTexto(texto);
@@ -267,9 +215,18 @@ function infoAgente(texto) {
 }
 
 function infoAgenteDoArquivo(nome) {
-    const m = String(nome).match(/agente[\s_]+(.+?)[\s_]+fila/i);
+    const m = String(nome).match(/agente[\s_]+(.+?)[\s_]+(?:tel|fila)/i);
     if (!m) return null;
-    return infoAgente(m[1]);
+    
+    const textoAgente = m[1];
+    const partes = textoAgente.split(/[\s_]+/);
+    
+    let nomeLimpo = partes;
+    if (partes.length > 1 && /^\d+$/.test(partes[partes.length - 1])) {
+        nomeLimpo = partes.slice(0, -1);
+    }
+    
+    return infoAgente(nomeLimpo.join(" "));
 }
 
 function agenteBate(a, b) {
@@ -280,21 +237,46 @@ function agenteBate(a, b) {
     );
 }
 
-/* ---------- telefone ---------- */
-
 const PADRAO_TEL = /^(?:\+?55[\s.\-]*)?\(?\d{2,3}\)?[\s.\-]*\d{4,5}[\s.\-]*\d{4,5}$/;
 const PADRAO_TEL_SEM_DDD = /^\d{4,5}[\s.\-]*\d{4,5}$/;
+
+// NOVO: Extração inteligente de telefone do nome do arquivo
+function extrairTelefoneDoNome(nome) {
+    // Formato: ...Tel_(11) 9 9951-9737_Fila... ou ...Tel_(14) 9 9603-2075_Fila...
+    const match = String(nome).match(/tel[_\s]+(\(?[\d\s\-\(\)]+\d{4,5}[\s\-]*\d{4,5})/i);
+    if (match) {
+        return match[1];
+    }
+    return null;
+}
+
+// NOVO: Extrai números de telefone do nome SEM "Tel_" (ignora timestamp e IDs curtos)
+function extrairNumerosDoNomeSemTel(nome) {
+    const nums = [];
+    const sequencias = sequenciasDe(nome);
+    
+    for (const seq of sequencias) {
+        // Ignora timestamp do início (8 dígitos tipo 20260930)
+        if (seq.length === 8 && /^\d{4}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/.test(seq)) continue;
+        // Ignora IDs curtos de agente (3-4 dígitos)
+        if (seq.length >= 3 && seq.length <= 4) continue;
+        // Pega apenas sequências que pareçam telefone (8-11 dígitos)
+        if (seq.length >= 8 && seq.length <= 11) {
+            nums.push(limpar(seq));
+        }
+    }
+    
+    return nums;
+}
 
 function extrairNumerosDe(texto) {
     const t = String(texto).replace(/\u00a0/g, " ").trim();
     const nums = [];
     if (!t) return nums;
 
-    // NOVO: Usa normalização ULTRA inteligente para DDDs bagunçados
     const normalizados = normalizarTelefone(t);
     nums.push(...normalizados);
 
-    // Também extrai sequências numéricas tradicionais como fallback
     for (const seq of sequenciasDe(t)) {
         if (seq.length >= 8) {
             const limpo = limpar(seq);
@@ -311,6 +293,16 @@ function ehColunaTelefone(cabecalho) {
     const t = String(cabecalho ?? "").trim().toUpperCase();
     return (
         t.startsWith("TEL") ||
+        t.includes("TELEFONE") ||
+        t.includes("CELULAR") ||
+        t.includes("FONE") ||
+        t.includes("CONTATO") ||
+        t.includes("NÚMERO") ||
+        t.includes("NUMERO") ||
+        t.includes("PHONE") ||
+        t.includes("MOBILE") ||
+        t.includes("WHATSAPP") ||
+        t.includes("ZAP") ||
         t.includes("[SYS20]") ||
         t.includes("NO. TF") ||
         t.includes("[V48]") ||
@@ -332,14 +324,10 @@ function ehColunaNumeroAgente(cabecalho) {
     return t.includes("NÚMERO DO AGENTE") || t.includes("NUMERO DO AGENTE");
 }
 
-/* ---------- protocolo ---------- */
-
 function ehColunaProtocolo(cabecalho) {
     const t = String(cabecalho ?? "").trim().toLowerCase();
     return t === "protocolo" || t.includes("protocolo");
 }
-
-/* ---------- lê a planilha ---------- */
 
 async function lerPlanilha(file) {
     const buffer = await file.arrayBuffer();
@@ -366,6 +354,8 @@ async function lerPlanilha(file) {
         let colunaNumeroAgente = -1;
         let colunaProtocolo = -1;
 
+        console.log(` Cabeçalhos da aba "${nomeAba}":`, linhas[0]);
+
         linhas[0].forEach((c, i) => {
             if (ehColunaTelefone(c)) colunasTelefone.push(i);
             if (colunaData < 0 && ehColunaData(c)) colunaData = i;
@@ -374,7 +364,7 @@ async function lerPlanilha(file) {
             if (colunaProtocolo < 0 && ehColunaProtocolo(c)) colunaProtocolo = i;
         });
 
-        console.log("📊 Colunas encontradas:", {
+        console.log(" Colunas encontradas:", {
             telefone: colunasTelefone,
             data: colunaData,
             agente: colunaAgente,
@@ -419,11 +409,9 @@ async function lerPlanilha(file) {
 
             const ts = colunaData >= 0 ? tsMinutosDataHora(linha[colunaData]) : null;
             
-            // CORREÇÃO: extrai o agente COM o número da coluna separada
             let agente = null;
             if (colunaAgente >= 0) {
                 agente = infoAgente(linha[colunaAgente]);
-                // Se tem coluna de número do agente, adiciona ao objeto agente
                 if (agente && colunaNumeroAgente >= 0) {
                     const numAgente = textoDaCelula(linha[colunaNumeroAgente]).replace(/\D/g, "");
                     if (numAgente) {
@@ -492,8 +480,6 @@ async function lerPlanilha(file) {
     };
 }
 
-/* ---------- ZIP genérico (usado pelos outros botões) ---------- */
-
 async function baixarZipDe(arquivos, nomeZip, botao) {
     if (!arquivos.length) {
         alert("⚠️ Nenhum arquivo para baixar!");
@@ -538,8 +524,6 @@ async function baixarZipDe(arquivos, nomeZip, botao) {
         atualizarBotoes();
     }
 }
-
-/* ---------- ZIP EM LOTES (pastas de 50 arquivos) ---------- */
 
 async function baixarZipEmLotes(arquivos, nomeZip, botao, tamanhoLote = 50) {
     if (!arquivos.length) {
@@ -595,8 +579,6 @@ async function baixarZipEmLotes(arquivos, nomeZip, botao, tamanhoLote = 50) {
         atualizarBotoes();
     }
 }
-
-/* ---------- CSV dos ENCONTRADOS ---------- */
 
 function baixarEncontradosCSV() {
     if (!ultimoResultado.achados || !ultimoResultado.achados.length) {
@@ -655,8 +637,6 @@ function baixarEncontradosCSV() {
     }
 }
 
-/* ---------- CSV dos NÃO ENCONTRADOS ---------- */
-
 function linhaTemMatch(row) {
     if (linhasEncontradas.has(row.sujeito)) return true;
     for (const n of row.nums) {
@@ -673,14 +653,11 @@ function baixarPlanilhaRestante() {
 
     try {
         if (statusTexto) statusTexto.textContent = "Gerando arquivo CSV...";
-        console.log("🔍 INICIANDO EXPORTAÇÃO CSV");
 
         let csvContent = "";
         let totalExportado = 0;
 
         for (const folha of estruturaPlanilha) {
-            console.log(`📄 Processando folha: ${folha.nome}`);
-            
             folha.rows.forEach((row, idx) => {
                 if (!row || !row.aoa) return;
 
@@ -707,7 +684,7 @@ function baixarPlanilhaRestante() {
         }
 
         if (totalExportado === 0) {
-            alert("️ Nenhuma linha restante para exportar!");
+            alert("⚠️ Nenhuma linha restante para exportar!");
             if (statusTexto) statusTexto.textContent = "Nenhuma linha restante para exportar.";
             return;
         }
@@ -722,17 +699,14 @@ function baixarPlanilhaRestante() {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
 
-        console.log(`✅ CSV gerado com sucesso: ${totalExportado} linhas`);
         if (statusTexto) {
             statusTexto.textContent = `✅ CSV baixado com ${totalExportado} linha(s)!`;
         }
     } catch (erro) {
-        console.error(" ERRO FATAL:", erro);
+        console.error("❌ ERRO FATAL:", erro);
         alert("Erro ao gerar arquivo: " + erro.message);
     }
 }
-
-/* ---------- 4º botão: fora da planilha ---------- */
 
 let btnFora = document.getElementById("btnForaPlanilha");
 if (!btnFora) {
@@ -752,8 +726,6 @@ if (!btnFora) {
     );
 }
 
-/* ---------- NOVO: 5º botão para encontrados por data/hora ---------- */
-
 let btnEncontradosPorData = document.getElementById("btnEncontradosPorData");
 if (!btnEncontradosPorData) {
     const containerAcoes =
@@ -772,8 +744,6 @@ if (!btnEncontradosPorData) {
     );
 }
 
-/* ---------- NOVO: 6º botão para CSV dos ENCONTRADOS ---------- */
-
 let btnEncontradosCSV = document.getElementById("btnEncontradosCSV");
 if (!btnEncontradosCSV) {
     const containerAcoes =
@@ -790,7 +760,6 @@ if (!btnEncontradosCSV) {
     btnEncontradosCSV.addEventListener("click", baixarEncontradosCSV);
 }
 
-/* ---------- NOVO: Checkbox para alternar modo de busca ---------- */
 let chkModoMatch = document.getElementById("chkModoMatch");
 if (!chkModoMatch) {
     const containerAcoes = document.querySelector(".acoesSeparar") || btnProcessar?.parentElement || document.body;
@@ -814,15 +783,12 @@ if (!chkModoMatch) {
     wrapper.appendChild(chkModoMatch);
     wrapper.appendChild(label);
     
-    // Insere a caixa de seleção logo antes do botão Processar
     if (btnProcessar) {
         containerAcoes.insertBefore(wrapper, btnProcessar);
     } else {
         containerAcoes.appendChild(wrapper);
     }
 }
-
-/* ---------- estado dos botões ---------- */
 
 function atualizarBotoes() {
     if (btnBaixarZip) btnBaixarZip.disabled = arquivosEncontrados.length === 0;
@@ -833,8 +799,6 @@ function atualizarBotoes() {
 }
 
 atualizarBotoes();
-
-/* ---------- diagnóstico ---------- */
 
 function mostrarDiagnostico(amostraPlanilha, nao, duplicados) {
     let box = document.getElementById("diagnostico");
@@ -849,10 +813,10 @@ function mostrarDiagnostico(amostraPlanilha, nao, duplicados) {
     const fora = nao.slice(0, 8).map((n) => `${n.nome} → [${n.numeros.join(", ") || "sem números"}]`);
 
     box.innerHTML =
-        `<strong>🔎 Conferência:</strong><br>` +
+        `<strong> Conferência:</strong><br>` +
         `Exemplos de números lidos das colunas de telefone: ${amostraPlanilha.join(", ") || "— (nessa planilha o match foi por data/hora ou agente)"}` +
         (duplicados.length
-            ? `<br><br><strong>⚠️ Números duplicados (${duplicados.length}):</strong><br>` +
+            ? `<br><br><strong>️ Números duplicados (${duplicados.length}):</strong><br>` +
             duplicados.slice(0, 10)
                 .map((d) => `${d.numero} → aparece em ${d.ids.length} linhas: ${d.ids.join(", ")}`)
                 .join("<br>")
@@ -862,8 +826,6 @@ function mostrarDiagnostico(amostraPlanilha, nao, duplicados) {
             (nao.length > 8 ? "<br>… (baixe o ZIP 'fora da planilha' pra levar todos)" : "")
             : "<br><br>Todos os arquivos da pasta bateram com a planilha. ✅");
 }
-
-/* ---------- eventos ---------- */
 
 inputPasta?.addEventListener("change", () => {
     const total = inputPasta.files?.length || 0;
@@ -890,7 +852,6 @@ btnProcessar?.addEventListener("click", async () => {
     linhasEncontradas = new Set();
     linhasRestantes = 0;
     
-    // NOVO: controle de linhas já utilizadas para evitar match duplicado
     let linhasUtilizadas = new Set();
     
     atualizarBotoes();
@@ -903,7 +864,6 @@ btnProcessar?.addEventListener("click", async () => {
         if (!arquivos.length) throw new Error("Selecione a pasta com os arquivos.");
         if (!documento) throw new Error("Selecione o Excel ou CSV com os números.");
 
-        // Lê o estado do checkbox para definir o modo de busca
         const forcarDataEAgente = chkModoMatch?.checked || false;
 
         const { mapaVariante, mapaProtocolo, registrosData, agentesPlanilha, folhas, totalUnicos, totalRegistros, duplicados } =
@@ -921,14 +881,31 @@ btnProcessar?.addEventListener("click", async () => {
 
         for (let idx = 0; idx < arquivos.length; idx++) {
             const f = arquivos[idx];
-            const numsArquivo = extrairNumerosDe(f.name);
+            
+            // NOVO: Lógica inteligente de extração
+            const telDoNome = extrairTelefoneDoNome(f.name);
+            let numsArquivo = [];
+            let temTelefoneNoNome = false;
+            
+            if (telDoNome) {
+                // Tem "Tel_" no nome - extrai só o telefone
+                numsArquivo = extrairNumerosDe(telDoNome);
+                temTelefoneNoNome = true;
+            } else {
+                // NÃO tem "Tel_" - extrai números que pareçam telefone (ignora timestamp e IDs)
+                numsArquivo = extrairNumerosDoNomeSemTel(f.name);
+                temTelefoneNoNome = false;
+            }
+            
             const protoArquivo = String(f.name).match(/(\d+)/)?.[1] || null;
             const tsArq = tsMinutosDoArquivo(f.name);
             const agArq = infoAgenteDoArquivo(f.name);
             
-            if (idx < 3) {
+            if (idx < 5) {
                 console.log(`\n🔍 ARQUIVO ${idx + 1}:`, f.name);
-                console.log("  - Números extraídos:", numsArquivo);
+                console.log("  - Tem Tel_ no nome?", temTelefoneNoNome);
+                console.log("  - Telefone extraído:", telDoNome);
+                console.log("  - Números para match:", numsArquivo);
                 console.log("  - Timestamp arquivo:", tsArq, tsArq ? new Date(tsArq * 60000).toISOString() : "");
                 console.log("  - Agente arquivo:", agArq);
             }
@@ -936,9 +913,7 @@ btnProcessar?.addEventListener("click", async () => {
             let evidencia = null;
             let regra = "";
 
-            // 1) e 2) protocolo e telefone (SÓ EXECUTA SE O CHECKBOX ESTIVER DESMARCADO)
             if (!forcarDataEAgente) {
-                // 1) protocolo
                 if (!evidencia && mapaProtocolo.size > 0 && protoArquivo) {
                     const hit = mapaProtocolo.get(protoArquivo);
                     if (hit && !linhasUtilizadas.has(hit)) {
@@ -947,8 +922,7 @@ btnProcessar?.addEventListener("click", async () => {
                     }
                 }
 
-                // 2) telefone
-                if (!evidencia) {
+                if (!evidencia && temTelefoneNoNome) {
                     for (const n of numsArquivo) {
                         for (const v of variantes(n)) {
                             const hit = mapaVariante.get(v);
@@ -963,18 +937,18 @@ btnProcessar?.addEventListener("click", async () => {
                 }
             }
 
-            // 3) data/hora (EXECUTA SEMPRE, mas ganha prioridade total se o checkbox estiver marcado)
             if (!evidencia && tsArq !== null) {
                 let melhorHit = null;
                 let melhorDiff = Infinity;
                 
                 for (const r of registrosData) {
-                    // Pula linhas já utilizadas
                     if (linhasUtilizadas.has(r.sujeito)) continue;
                     
                     const diff = Math.abs(r.ts - tsArq);
                     if (diff > TOLERANCIA_MIN) continue;
-                    if (!agenteBate(r.agente, agArq)) continue;
+                    
+                    // Se tem agente no arquivo, confirma com agente. Se não, aceita qualquer um.
+                    if (agArq && !agenteBate(r.agente, agArq)) continue;
 
                     if (diff < melhorDiff) {
                         melhorDiff = diff;
@@ -985,20 +959,11 @@ btnProcessar?.addEventListener("click", async () => {
                 if (melhorHit) {
                     evidencia = { numeroArquivo: String(tsArq), numeroPlanilha: String(melhorHit.ts), sujeito: melhorHit.sujeito };
                     regra = "data";
-                } else if (idx < 3) {
-                    console.log("   NÃO achou por data/hora. Buscando...");
-                    console.log("    Registros disponíveis:", registrosData.length);
-                    if (registrosData.length > 0) {
-                        console.log("    Primeiro registro:", registrosData[0]);
-                        console.log("    Diff minutos:", Math.abs(registrosData[0].ts - tsArq));
-                    }
                 }
             }
 
-            // 4) agente (fallback - com controle de linhas utilizadas)
             if (!evidencia && agArq) {
                 for (const a of agentesPlanilha) {
-                    // Pula linhas já utilizadas
                     if (linhasUtilizadas.has(a.sujeito)) continue;
                     
                     if (agenteBate(a, agArq) && (a.nomeSo || a.numero)) {
@@ -1007,14 +972,9 @@ btnProcessar?.addEventListener("click", async () => {
                         break;
                     }
                 }
-                
-                if (!evidencia && idx < 3) {
-                    console.log("  ❌ NÃO achou por agente. Agentes disponíveis:", agentesPlanilha.length);
-                }
             }
 
             if (evidencia) {
-                // Marca a linha como utilizada
                 linhasUtilizadas.add(evidencia.sujeito);
                 
                 if (regra === "protocolo") cProto++;
