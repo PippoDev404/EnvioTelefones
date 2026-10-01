@@ -1,9 +1,19 @@
 // 5-js/separarArquivos.js
+// Match por 4 chaves (em ordem):
+//  1) protocolo
+//  2) telefone
+//  3) data/hora com JANELA DE ±30 MIN (+ confirma agente quando disponível)
+//  4) agente (fallback quando as outras regras falham)
+// Suporta dois formatos de arquivo:
+//  - Br Call: 20260930_164409_Agente_Nome_ID_Tel_(DD) 9 XXXX-XXXX_Fila_...
+//  - Verreschi: 26237657_oloswebrtcagentid..._78835538997268633_162_1670_20260930_083113
+//    (prefixo variável: 7883, 25010, 788, 2501 + número do telefone)
 import * as XLSX from "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm";
 import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
 
 console.log("✅ separarArquivos.js carregou");
 
+/* ⏱️ janela de tolerância da data/hora (em minutos) */
 const TOLERANCIA_MIN = 30;
 
 const inputPasta = document.getElementById("inputPasta");
@@ -28,6 +38,8 @@ let linhasEncontradas = new Set();
 let linhasRestantes = 0;
 let ultimoResultado = { achados: [], nao: [], duplicados: [] };
 
+/* ---------- utilidades ---------- */
+
 function sequenciasDe(texto) {
     return String(texto).match(/\d+/g) || [];
 }
@@ -45,6 +57,8 @@ function normalizarTexto(t) {
         .replace(/\s+/g, " ")
         .trim();
 }
+
+/* ---------- Normalização de telefone ---------- */
 
 function normalizarTelefone(texto) {
     const todosDigitos = String(texto).replace(/\D/g, "");
@@ -169,6 +183,8 @@ function textoDaCelula(celula) {
     return t;
 }
 
+/* ---------- data/hora ---------- */
+
 function tsMinutosDataHora(celula) {
     if (celula instanceof Date && !isNaN(celula)) {
         return Math.floor(Date.UTC(
@@ -205,6 +221,8 @@ function tsMinutosDoArquivo(nome) {
     return Math.floor(Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)) / 60000);
 }
 
+/* ---------- agente ---------- */
+
 function infoAgente(texto) {
     const t = normalizarTexto(texto);
     if (!t) return null;
@@ -237,37 +255,80 @@ function agenteBate(a, b) {
     );
 }
 
-// NOVO: Detecta se é formato Verreschi
+/* ---------- DETECÇÃO DE FORMATO ---------- */
+
 function ehFormatoVerreschi(nome) {
     return /oloswebrtcagentid/i.test(nome);
 }
 
-// NOVO: Extrai informações do formato Verreschi
+// CORREÇÃO: Detecta diferentes prefixos (7883, 25010, 788, 2501) e extrai o telefone
 function extrairInfoVerreschi(nome) {
-    // Formato: 26237657_oloswebrtcagentid167010247100208098_7885531971551656_162_1670_20260930_083113
-    const partes = nome.split('_');
+    // Formato: 26237657_oloswebrtcagentid167010247100208098_78835538997268633_162_1670_20260930_083113.mp3
+    // ou: 269668121_oloswebrtcagentid167810247100208098_250105538998297356_162_1678_20261001_084004.mp3
+    const nomeLimpo = String(nome).replace(/\.(mp3|wav|ogg)$/i, "");
+    const partes = nomeLimpo.split('_');
     
     let telefone = null;
     let agenteId = null;
     let dataHora = null;
     
-    for (const parte of partes) {
-        // Procura número longo (16 dígitos) que pode ser telefone
-        if (parte.length === 16 && /^\d+$/.test(parte)) {
-            telefone = parte;
+    console.log("  [Verreschi] Partes do nome:", partes);
+    
+    for (let i = 0; i < partes.length; i++) {
+        const parte = partes[i];
+        
+        // Número longo (13-18 dígitos) que pode ser telefone com prefixo variável
+        if (parte.length >= 13 && parte.length <= 18 && /^\d+$/.test(parte)) {
+            console.log(`  [Verreschi] → Número longo detectado: "${parte}" (length=${parte.length})`);
+            
+            // Tenta diferentes prefixos conhecidos (ordem importa: maiores primeiro)
+            const prefixosConhecidos = ['25010', '7883', '2501', '788'];
+            let encontrado = false;
+            
+            for (const prefixo of prefixosConhecidos) {
+                if (parte.startsWith(prefixo)) {
+                    telefone = parte.slice(prefixo.length);
+                    console.log(`  [Verreschi]   → Prefixo "${prefixo}" removido: "${telefone}" (length=${telefone.length})`);
+                    encontrado = true;
+                    break;
+                }
+            }
+            
+            // Se não encontrou prefixo conhecido, pega os últimos 13 dígitos (formato brasileiro: 55+DDD+número)
+            if (!encontrado) {
+                if (parte.length > 13) {
+                    telefone = parte.slice(-13);
+                    console.log(`  [Verreschi]   → Sem prefixo conhecido, pegando últimos 13 dígitos: "${telefone}"`);
+                } else {
+                    telefone = parte;
+                    console.log(`  [Verreschi]   → Usado direto (13 dígitos): "${telefone}"`);
+                }
+            }
         }
-        // Procura ID de agente (números curtos como 162, 1678)
-        if (parte.length >= 3 && parte.length <= 4 && /^\d+$/.test(parte)) {
+        
+        // ID de agente (3-4 dígitos) - pega o PRIMEIRO encontrado
+        if (!agenteId && parte.length >= 3 && parte.length <= 4 && /^\d+$/.test(parte)) {
             agenteId = parte;
+            console.log(`  [Verreschi] → ID agente detectado: "${agenteId}"`);
         }
-        // Procura data/hora no final
+        
+        // Data/hora (YYYYMMDD_HHMMSS ou YYYYMMDD)
         if (/^\d{8}_\d{6}$/.test(parte)) {
             dataHora = parte;
+            console.log(`  [Verreschi] → Data/hora detectada: "${dataHora}"`);
+        } else if (/^\d{8}$/.test(parte) && !dataHora) {
+            // Só data, sem hora
+            dataHora = parte + "_000000";
+            console.log(`  [Verreschi] → Só data detectada: "${parte}"`);
         }
     }
     
+    console.log("  [Verreschi] Resultado final:", { telefone, agenteId, dataHora });
+    
     return { telefone, agenteId, dataHora };
 }
+
+/* ---------- Extração de telefone do nome (Br Call) ---------- */
 
 function extrairTelefoneDoNome(nome) {
     const match = String(nome).match(/tel[_\s]+(\(?[\d\s\-\(\)]+\d{4,5}[\s\-]*\d{4,5})/i);
@@ -312,6 +373,8 @@ function extrairNumerosDe(texto) {
     return nums;
 }
 
+/* ---------- Detecção de colunas ---------- */
+
 function ehColunaTelefone(cabecalho) {
     const t = String(cabecalho ?? "").trim().toUpperCase();
     return (
@@ -351,6 +414,8 @@ function ehColunaProtocolo(cabecalho) {
     const t = String(cabecalho ?? "").trim().toLowerCase();
     return t === "protocolo" || t.includes("protocolo");
 }
+
+/* ---------- lê a planilha ---------- */
 
 async function lerPlanilha(file) {
     const buffer = await file.arrayBuffer();
@@ -444,7 +509,7 @@ async function lerPlanilha(file) {
             }
 
             if (idxLinha === 1 && colunaData >= 0) {
-                console.log("🕐 DEBUG DATA:", {
+                console.log(" DEBUG DATA:", {
                     celulaRaw: linha[colunaData],
                     celulaString: String(linha[colunaData]),
                     tsMinutos: ts,
@@ -453,7 +518,7 @@ async function lerPlanilha(file) {
             }
 
             if (idxLinha === 1 && colunaAgente >= 0) {
-                console.log(" DEBUG AGENTE:", {
+                console.log("👤 DEBUG AGENTE:", {
                     nomeAgente: linha[colunaAgente],
                     numeroAgente: colunaNumeroAgente >= 0 ? linha[colunaNumeroAgente] : "N/A",
                     agenteObj: agente
@@ -476,7 +541,7 @@ async function lerPlanilha(file) {
         folhas.push({ nome: nomeAba, rows });
     }
 
-    console.log(" Total registros data/hora:", registrosData.length);
+    console.log("📋 Total registros data/hora:", registrosData.length);
     console.log("👥 Total agentes:", agentesPlanilha.length);
     console.log("📞 Total telefones:", mapaBase.size);
 
@@ -502,6 +567,8 @@ async function lerPlanilha(file) {
         duplicados,
     };
 }
+
+/* ---------- ZIP genérico ---------- */
 
 async function baixarZipDe(arquivos, nomeZip, botao) {
     if (!arquivos.length) {
@@ -547,6 +614,8 @@ async function baixarZipDe(arquivos, nomeZip, botao) {
         atualizarBotoes();
     }
 }
+
+/* ---------- ZIP EM LOTES ---------- */
 
 async function baixarZipEmLotes(arquivos, nomeZip, botao, tamanhoLote = 50) {
     if (!arquivos.length) {
@@ -602,6 +671,8 @@ async function baixarZipEmLotes(arquivos, nomeZip, botao, tamanhoLote = 50) {
         atualizarBotoes();
     }
 }
+
+/* ---------- CSV dos ENCONTRADOS ---------- */
 
 function baixarEncontradosCSV() {
     if (!ultimoResultado.achados || !ultimoResultado.achados.length) {
@@ -659,6 +730,8 @@ function baixarEncontradosCSV() {
         alert("Erro ao gerar arquivo: " + erro.message);
     }
 }
+
+/* ---------- CSV dos NÃO ENCONTRADOS ---------- */
 
 function linhaTemMatch(row) {
     if (linhasEncontradas.has(row.sujeito)) return true;
@@ -731,6 +804,8 @@ function baixarPlanilhaRestante() {
     }
 }
 
+/* ---------- Botões dinâmicos ---------- */
+
 let btnFora = document.getElementById("btnForaPlanilha");
 if (!btnFora) {
     const containerAcoes =
@@ -783,6 +858,8 @@ if (!btnEncontradosCSV) {
     btnEncontradosCSV.addEventListener("click", baixarEncontradosCSV);
 }
 
+/* ---------- Checkbox de modo ---------- */
+
 let chkModoMatch = document.getElementById("chkModoMatch");
 if (!chkModoMatch) {
     const containerAcoes = document.querySelector(".acoesSeparar") || btnProcessar?.parentElement || document.body;
@@ -813,6 +890,8 @@ if (!chkModoMatch) {
     }
 }
 
+/* ---------- estado dos botões ---------- */
+
 function atualizarBotoes() {
     if (btnBaixarZip) btnBaixarZip.disabled = arquivosEncontrados.length === 0;
     if (btnEncontradosCSV) btnEncontradosCSV.disabled = !ultimoResultado.achados || ultimoResultado.achados.length === 0;
@@ -822,6 +901,8 @@ function atualizarBotoes() {
 }
 
 atualizarBotoes();
+
+/* ---------- diagnóstico ---------- */
 
 function mostrarDiagnostico(amostraPlanilha, nao, duplicados) {
     let box = document.getElementById("diagnostico");
@@ -849,6 +930,8 @@ function mostrarDiagnostico(amostraPlanilha, nao, duplicados) {
             (nao.length > 8 ? "<br>… (baixe o ZIP 'fora da planilha' pra levar todos)" : "")
             : "<br><br>Todos os arquivos da pasta bateram com a planilha. ✅");
 }
+
+/* ---------- eventos ---------- */
 
 inputPasta?.addEventListener("change", () => {
     const total = inputPasta.files?.length || 0;
@@ -905,7 +988,7 @@ btnProcessar?.addEventListener("click", async () => {
         for (let idx = 0; idx < arquivos.length; idx++) {
             const f = arquivos[idx];
             
-            // NOVO: Detecta formato e extrai informações
+            // Detecta formato e extrai informações
             const isVerreschi = ehFormatoVerreschi(f.name);
             let numsArquivo = [];
             let tsArq = null;
@@ -914,20 +997,18 @@ btnProcessar?.addEventListener("click", async () => {
             
             if (isVerreschi) {
                 // Formato Verreschi
-                const info = extrairInfoVerreschi(f.name);
                 formatoInfo = "Verreschi";
+                const info = extrairInfoVerreschi(f.name);
                 
-                // Extrai data/hora do final
                 if (info.dataHora) {
                     tsArq = tsMinutosDoArquivo(info.dataHora.replace('_', ''));
                 }
                 
-                // Extrai agente ID
                 if (info.agenteId) {
                     agArq = { t: info.agenteId, numero: info.agenteId, nomeSo: "" };
                 }
                 
-                // Extrai telefone (número longo de 16 dígitos)
+                // Extrai o telefone do nome do arquivo Verreschi (com prefixo variável)
                 if (info.telefone) {
                     numsArquivo = normalizarTelefone(info.telefone);
                 }
@@ -935,7 +1016,7 @@ btnProcessar?.addEventListener("click", async () => {
                 if (idx < 3) {
                     console.log(`\n🔍 ARQUIVO ${idx + 1} (Verreschi):`, f.name);
                     console.log("  - Info extraída:", info);
-                    console.log("  - Timestamp:", tsArq);
+                    console.log("  - Timestamp:", tsArq, tsArq ? new Date(tsArq * 60000).toISOString() : "");
                     console.log("  - Agente:", agArq);
                     console.log("  - Números:", numsArquivo);
                 }
@@ -957,7 +1038,7 @@ btnProcessar?.addEventListener("click", async () => {
                 agArq = infoAgenteDoArquivo(f.name);
                 
                 if (idx < 3) {
-                    console.log(`\n🔍 ARQUIVO ${idx + 1} (Br Call):`, f.name);
+                    console.log(`\n ARQUIVO ${idx + 1} (Br Call):`, f.name);
                     console.log("  - Tem Tel_ no nome?", temTelefoneNoNome);
                     console.log("  - Telefone extraído:", telDoNome);
                     console.log("  - Números para match:", numsArquivo);
