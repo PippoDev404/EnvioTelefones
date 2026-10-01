@@ -237,12 +237,39 @@ function agenteBate(a, b) {
     );
 }
 
-const PADRAO_TEL = /^(?:\+?55[\s.\-]*)?\(?\d{2,3}\)?[\s.\-]*\d{4,5}[\s.\-]*\d{4,5}$/;
-const PADRAO_TEL_SEM_DDD = /^\d{4,5}[\s.\-]*\d{4,5}$/;
+// NOVO: Detecta se é formato Verreschi
+function ehFormatoVerreschi(nome) {
+    return /oloswebrtcagentid/i.test(nome);
+}
 
-// NOVO: Extração inteligente de telefone do nome do arquivo
+// NOVO: Extrai informações do formato Verreschi
+function extrairInfoVerreschi(nome) {
+    // Formato: 26237657_oloswebrtcagentid167010247100208098_7885531971551656_162_1670_20260930_083113
+    const partes = nome.split('_');
+    
+    let telefone = null;
+    let agenteId = null;
+    let dataHora = null;
+    
+    for (const parte of partes) {
+        // Procura número longo (16 dígitos) que pode ser telefone
+        if (parte.length === 16 && /^\d+$/.test(parte)) {
+            telefone = parte;
+        }
+        // Procura ID de agente (números curtos como 162, 1678)
+        if (parte.length >= 3 && parte.length <= 4 && /^\d+$/.test(parte)) {
+            agenteId = parte;
+        }
+        // Procura data/hora no final
+        if (/^\d{8}_\d{6}$/.test(parte)) {
+            dataHora = parte;
+        }
+    }
+    
+    return { telefone, agenteId, dataHora };
+}
+
 function extrairTelefoneDoNome(nome) {
-    // Formato: ...Tel_(11) 9 9951-9737_Fila... ou ...Tel_(14) 9 9603-2075_Fila...
     const match = String(nome).match(/tel[_\s]+(\(?[\d\s\-\(\)]+\d{4,5}[\s\-]*\d{4,5})/i);
     if (match) {
         return match[1];
@@ -250,17 +277,13 @@ function extrairTelefoneDoNome(nome) {
     return null;
 }
 
-// NOVO: Extrai números de telefone do nome SEM "Tel_" (ignora timestamp e IDs curtos)
 function extrairNumerosDoNomeSemTel(nome) {
     const nums = [];
     const sequencias = sequenciasDe(nome);
     
     for (const seq of sequencias) {
-        // Ignora timestamp do início (8 dígitos tipo 20260930)
         if (seq.length === 8 && /^\d{4}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/.test(seq)) continue;
-        // Ignora IDs curtos de agente (3-4 dígitos)
         if (seq.length >= 3 && seq.length <= 4) continue;
-        // Pega apenas sequências que pareçam telefone (8-11 dígitos)
         if (seq.length >= 8 && seq.length <= 11) {
             nums.push(limpar(seq));
         }
@@ -354,7 +377,7 @@ async function lerPlanilha(file) {
         let colunaNumeroAgente = -1;
         let colunaProtocolo = -1;
 
-        console.log(` Cabeçalhos da aba "${nomeAba}":`, linhas[0]);
+        console.log(`📋 Cabeçalhos da aba "${nomeAba}":`, linhas[0]);
 
         linhas[0].forEach((c, i) => {
             if (ehColunaTelefone(c)) colunasTelefone.push(i);
@@ -364,7 +387,7 @@ async function lerPlanilha(file) {
             if (colunaProtocolo < 0 && ehColunaProtocolo(c)) colunaProtocolo = i;
         });
 
-        console.log(" Colunas encontradas:", {
+        console.log("📊 Colunas encontradas:", {
             telefone: colunasTelefone,
             data: colunaData,
             agente: colunaAgente,
@@ -430,7 +453,7 @@ async function lerPlanilha(file) {
             }
 
             if (idxLinha === 1 && colunaAgente >= 0) {
-                console.log("👤 DEBUG AGENTE:", {
+                console.log(" DEBUG AGENTE:", {
                     nomeAgente: linha[colunaAgente],
                     numeroAgente: colunaNumeroAgente >= 0 ? linha[colunaNumeroAgente] : "N/A",
                     agenteObj: agente
@@ -453,8 +476,8 @@ async function lerPlanilha(file) {
         folhas.push({ nome: nomeAba, rows });
     }
 
-    console.log("📋 Total registros data/hora:", registrosData.length);
-    console.log(" Total agentes:", agentesPlanilha.length);
+    console.log(" Total registros data/hora:", registrosData.length);
+    console.log("👥 Total agentes:", agentesPlanilha.length);
     console.log("📞 Total telefones:", mapaBase.size);
 
     const duplicados = [...ocorrencias.entries()]
@@ -582,7 +605,7 @@ async function baixarZipEmLotes(arquivos, nomeZip, botao, tamanhoLote = 50) {
 
 function baixarEncontradosCSV() {
     if (!ultimoResultado.achados || !ultimoResultado.achados.length) {
-        alert("⚠️ Nenhum arquivo encontrado para exportar!");
+        alert("️ Nenhum arquivo encontrado para exportar!");
         return;
     }
 
@@ -813,10 +836,10 @@ function mostrarDiagnostico(amostraPlanilha, nao, duplicados) {
     const fora = nao.slice(0, 8).map((n) => `${n.nome} → [${n.numeros.join(", ") || "sem números"}]`);
 
     box.innerHTML =
-        `<strong> Conferência:</strong><br>` +
+        `<strong>🔎 Conferência:</strong><br>` +
         `Exemplos de números lidos das colunas de telefone: ${amostraPlanilha.join(", ") || "— (nessa planilha o match foi por data/hora ou agente)"}` +
         (duplicados.length
-            ? `<br><br><strong>️ Números duplicados (${duplicados.length}):</strong><br>` +
+            ? `<br><br><strong>⚠️ Números duplicados (${duplicados.length}):</strong><br>` +
             duplicados.slice(0, 10)
                 .map((d) => `${d.numero} → aparece em ${d.ids.length} linhas: ${d.ids.join(", ")}`)
                 .join("<br>")
@@ -882,33 +905,68 @@ btnProcessar?.addEventListener("click", async () => {
         for (let idx = 0; idx < arquivos.length; idx++) {
             const f = arquivos[idx];
             
-            // NOVO: Lógica inteligente de extração
-            const telDoNome = extrairTelefoneDoNome(f.name);
+            // NOVO: Detecta formato e extrai informações
+            const isVerreschi = ehFormatoVerreschi(f.name);
             let numsArquivo = [];
-            let temTelefoneNoNome = false;
+            let tsArq = null;
+            let agArq = null;
+            let formatoInfo = "";
             
-            if (telDoNome) {
-                // Tem "Tel_" no nome - extrai só o telefone
-                numsArquivo = extrairNumerosDe(telDoNome);
-                temTelefoneNoNome = true;
+            if (isVerreschi) {
+                // Formato Verreschi
+                const info = extrairInfoVerreschi(f.name);
+                formatoInfo = "Verreschi";
+                
+                // Extrai data/hora do final
+                if (info.dataHora) {
+                    tsArq = tsMinutosDoArquivo(info.dataHora.replace('_', ''));
+                }
+                
+                // Extrai agente ID
+                if (info.agenteId) {
+                    agArq = { t: info.agenteId, numero: info.agenteId, nomeSo: "" };
+                }
+                
+                // Extrai telefone (número longo de 16 dígitos)
+                if (info.telefone) {
+                    numsArquivo = normalizarTelefone(info.telefone);
+                }
+                
+                if (idx < 3) {
+                    console.log(`\n🔍 ARQUIVO ${idx + 1} (Verreschi):`, f.name);
+                    console.log("  - Info extraída:", info);
+                    console.log("  - Timestamp:", tsArq);
+                    console.log("  - Agente:", agArq);
+                    console.log("  - Números:", numsArquivo);
+                }
             } else {
-                // NÃO tem "Tel_" - extrai números que pareçam telefone (ignora timestamp e IDs)
-                numsArquivo = extrairNumerosDoNomeSemTel(f.name);
-                temTelefoneNoNome = false;
+                // Formato Br Call
+                formatoInfo = "Br Call";
+                const telDoNome = extrairTelefoneDoNome(f.name);
+                let temTelefoneNoNome = false;
+                
+                if (telDoNome) {
+                    numsArquivo = extrairNumerosDe(telDoNome);
+                    temTelefoneNoNome = true;
+                } else {
+                    numsArquivo = extrairNumerosDoNomeSemTel(f.name);
+                    temTelefoneNoNome = false;
+                }
+                
+                tsArq = tsMinutosDoArquivo(f.name);
+                agArq = infoAgenteDoArquivo(f.name);
+                
+                if (idx < 3) {
+                    console.log(`\n🔍 ARQUIVO ${idx + 1} (Br Call):`, f.name);
+                    console.log("  - Tem Tel_ no nome?", temTelefoneNoNome);
+                    console.log("  - Telefone extraído:", telDoNome);
+                    console.log("  - Números para match:", numsArquivo);
+                    console.log("  - Timestamp:", tsArq);
+                    console.log("  - Agente:", agArq);
+                }
             }
             
             const protoArquivo = String(f.name).match(/(\d+)/)?.[1] || null;
-            const tsArq = tsMinutosDoArquivo(f.name);
-            const agArq = infoAgenteDoArquivo(f.name);
-            
-            if (idx < 5) {
-                console.log(`\n🔍 ARQUIVO ${idx + 1}:`, f.name);
-                console.log("  - Tem Tel_ no nome?", temTelefoneNoNome);
-                console.log("  - Telefone extraído:", telDoNome);
-                console.log("  - Números para match:", numsArquivo);
-                console.log("  - Timestamp arquivo:", tsArq, tsArq ? new Date(tsArq * 60000).toISOString() : "");
-                console.log("  - Agente arquivo:", agArq);
-            }
             
             let evidencia = null;
             let regra = "";
@@ -922,7 +980,7 @@ btnProcessar?.addEventListener("click", async () => {
                     }
                 }
 
-                if (!evidencia && temTelefoneNoNome) {
+                if (!evidencia && numsArquivo.length > 0) {
                     for (const n of numsArquivo) {
                         for (const v of variantes(n)) {
                             const hit = mapaVariante.get(v);
@@ -947,7 +1005,6 @@ btnProcessar?.addEventListener("click", async () => {
                     const diff = Math.abs(r.ts - tsArq);
                     if (diff > TOLERANCIA_MIN) continue;
                     
-                    // Se tem agente no arquivo, confirma com agente. Se não, aceita qualquer um.
                     if (agArq && !agenteBate(r.agente, agArq)) continue;
 
                     if (diff < melhorDiff) {
